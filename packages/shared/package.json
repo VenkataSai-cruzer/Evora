@@ -1,0 +1,10 @@
+{
+  "name": "@jamming/shared",
+  "version": "0.1.0",
+  "private": true,
+  "exports": {
+    ".": "./src/constants.ts"
+  },
+  "main": "src/constants.ts",
+  "types": "src/constants.ts"
+}

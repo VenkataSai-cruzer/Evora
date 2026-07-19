@@ -1,0 +1,32 @@
+{
+  "name": "jamming",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "prepare": "husky",
+    "dev": "npm run dev --workspace=apps/web",
+    "build": "npm run build --workspace=apps/web",
+    "lint": "npm run lint --workspace=apps/web",
+    "typecheck": "npm run typecheck --workspace=apps/web",
+    "test": "npm run test --workspace=apps/web",
+    "test:e2e": "npm run test:e2e --workspace=apps/web",
+    "db:migrate": "npm run db:migrate --workspace=apps/web",
+    "db:seed": "npm run db:seed --workspace=apps/web",
+    "db:generate": "npm run db:generate --workspace=apps/web"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,css}": [
+      "prettier --write"
+    ]
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.7.0"
+  }
+}

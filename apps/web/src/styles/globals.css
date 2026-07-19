@@ -1,0 +1,55 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --color-bg: #0A0A0A;
+    --color-surface: #1A1A1A;
+    --color-surface-elevated: #242424;
+    --color-border: #2A2A2A;
+  }
+
+  * {
+    @apply border-[var(--color-border)];
+  }
+
+  body {
+    @apply bg-[var(--color-bg)] text-white antialiased;
+  }
+}
+
+@layer components {
+  .glass {
+    background: rgba(26, 26, 26, 0.8);
+    backdrop-filter: blur(12px) saturate(180%);
+    -webkit-backdrop-filter: blur(12px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .skeleton {
+    @apply animate-pulse rounded-md bg-surface-elevated;
+  }
+
+  .page-container {
+    @apply mx-auto max-w-7xl px-4 sm:px-6 lg:px-8;
+  }
+
+  .section-title {
+    @apply text-2xl font-bold text-white;
+  }
+
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+@layer utilities {
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+}
