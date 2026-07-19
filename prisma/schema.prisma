@@ -2,388 +2,176 @@ generator client {
   provider = "prisma-client-js"
 }
 
-// For local development: uses SQLite (file:./dev.db in .env)
-// For production: switch provider to "postgresql" and set DATABASE_URL to a PostgreSQL connection string
+// ═══════════════════════════════════════════════════════════════════
+// Development: SQLite (config in .env)
+// Production:  PostgreSQL on Supabase
+// ═══════════════════════════════════════════════════════════════════
 datasource db {
   provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
-model User {
-  id                 String   @id @default(uuid())
-  email              String   @unique
-  displayName        String
-  passwordHash       String?
-  avatarUrl          String?
-  bio                String?
-  instruments        String   @default("[]")
-  skillLevel         String?
-  role               String   @default("USER")
-  emailVerified      Boolean  @default(false)
-  authProvider       String   @default("email")
-  foundingMember     Boolean  @default(false)
-  totalHoursAttended Int      @default(0)
-  firstEventId       String?
-  favoriteVenue      String?
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+// ───────────────────────────────────────────────
+// USER & AUTH
+// ───────────────────────────────────────────────
 
-  tickets              Ticket[]
-  events               Event[]              @relation("OrganizedEvents")
-  utrBatches           UtrBatch[]           @relation("UtrBatchUploader")
-  checkIns             CheckIn[]
-  auditLogs            AuditLog[]
-  notifications        Notification[]
-  waitlistEntries      WaitlistEntry[]
-  eventOrganizers      EventOrganizer[]
-  eventUpdates         EventUpdate[]         @relation("EventUpdateAuthor")
-  eventMedia           EventMedia[]
-  eventJournals        EventJournal[]
-  appreciationMessages AppreciationMessage[]
-  orders               Order[]
-  mediaAccessLogs      MediaAccessLog[]
-  announcements        Announcement[]
-  passportBadges       PassportBadge[]
-  eventScheduleItems   EventScheduleItem[]
-  eventFaqs            EventFAQ[]
-  eventStories         EventStory[]
-  externalLinks        EventExternalLink[]
-  galleryItems         EventGalleryItem[]
+model User {
+  id              String   @id @default(uuid())
+  name            String
+  email           String   @unique
+  passwordHash    String?
+  role            String   @default("ATTENDEE")   // ATTENDEE | ADMIN | CHECKIN_STAFF
+  emailVerifiedAt DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  orders    Order[]
+  tickets   Ticket[]
+  checkIns  CheckIn[]
+  sessions  Session[]
+  auditLogs AuditLog[]
 
   @@index([role])
 }
 
-model PassportBadge {
-  id        String   @id @default(uuid())
+model Session {
+  id        String    @id @default(uuid())
   userId    String
-  type      String   // FOUNDING_MEMBER, ANNIVERSARY, VOLUNTEER, PERFORMER, etc.
-  label     String
-  earnedAt  DateTime @default(now())
-  metadata  String   @default("{}")
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id])
 
-  @@unique([userId, type])
   @@index([userId])
+  @@index([expiresAt])
 }
+
+// ───────────────────────────────────────────────
+// EVENT
+// ───────────────────────────────────────────────
 
 model Event {
-  id                String   @id @default(uuid())
-  title             String
-  slug              String   @unique
-  description       String
-  coverImageUrl     String?
-  eventLogoUrl      String?
-  edition           String?
-  startDate         DateTime
-  startTime         String
-  endDate           DateTime?
-  endTime           String?
-  venueName         String
-  venueAddress      String
-  venueLat          Float?
-  venueLng          Float?
-  entryGate         String?
-  entryInstructions String?
-  termsUrl          String?
-  upiId             String?  // UPI ID for receiving payments (e.g., organizer@upi)
-  upiQrCodeUrl      String?  // URL to UPI QR code image
-  capacity          Int
-  ticketType        String   @default("FREE")
-  priceAmount       Int?
-  instruments       String   @default("[]")
-  skillLevel        String   @default("ALL")
-  visibility        String   @default("PUBLIC")
-  status            String   @default("DRAFT")
-  featured          Boolean  @default(false)
-  organizerId       String
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  id               String   @id @default(uuid())
+  title            String
+  slug             String   @unique
+  shortDescription String?
+  description      String?
+  posterObjectKey  String?
+  status           String   @default("DRAFT")   // DRAFT | PUBLISHED | COMPLETED | CANCELLED
+  startAt          DateTime
+  endAt            DateTime?
+  venueName        String
+  venueAddress     String?
+  mapUrl           String?
+  timezone         String   @default("Asia/Kolkata")
+  totalCapacity    Int      @default(0)
+  salesStartAt     DateTime?
+  salesEndAt       DateTime?
+  salesPaused      Boolean  @default(false)
+  bookingClosed    Boolean  @default(false)
+  contactEmail     String?
+  contactPhone     String?
+  terms            String?
+  ticketNumberPrefix String @default("")   // e.g. "7N-2026-HYD-"
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
-  tickets              Ticket[]
-  ticketTypes          TicketType[]
-  checkIns             CheckIn[]
-  waitlist             WaitlistEntry[]
-  eventOrganizers      EventOrganizer[]
-  organizer            User                 @relation("OrganizedEvents", fields: [organizerId], references: [id])
-  updates              EventUpdate[]
-  scheduleItems        EventScheduleItem[]
-  announcements        Announcement[]
-  media                EventMedia[]
-  externalLinks        EventExternalLink[]
-  galleryItems         EventGalleryItem[]
-  faqs                 EventFAQ[]
-  performers           EventPerformer[]
-  journals             EventJournal[]
-  appreciationMessages AppreciationMessage[]
-  orders               Order[]
-  stories              EventStory[]
-  utrBatches           UtrBatch[]
-  mediaAccessLogs      MediaAccessLog[]
+  ticketTypes   TicketType[]
+  orders        Order[]
+  tickets       Ticket[]
+  checkIns      CheckIn[]
+  branding      EventBranding?
+  partners      EventPartner[]
+  templates     TicketTemplate[]
+  auditLogs     AuditLog[]
 
   @@index([slug])
-  @@index([startDate])
   @@index([status])
-  @@index([organizerId])
-  @@index([featured])
+  @@index([startAt])
 }
 
-model TicketType {
-  id              String   @id @default(uuid())
-  eventId         String
-  name            String
-  description     String?
-  priceAmount     Int      @default(0)
-  currency        String   @default("USD")
-  quantity        Int      @default(0)
-  reservedQty     Int      @default(0)
-  soldQty         Int      @default(0)
-  saleStart       DateTime?
-  saleEnd         DateTime?
-  minPerBooking   Int      @default(1)
-  maxPerBooking   Int      @default(10)
-  bookingMode     String   @default("FLEXIBLE")
-  visibility      String   @default("PUBLIC")
-  status          String   @default("DRAFT")
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+model EventBranding {
+  id                     String @id @default(uuid())
+  eventId                String @unique
+  venueLogoObjectKey     String?
+  primaryLogoObjectKey   String?
+  footerArtworkObjectKey String?
+  contentPartnerHeading  String?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  event Event @relation(fields: [eventId], references: [id])
+}
+
+model EventPartner {
+  id           String @id @default(uuid())
+  eventId      String
+  name         String
+  logoObjectKey String?
+  displayOrder Int    @default(0)
+  partnerType  String @default("CONTENT_PARTNER")  // CONTENT_PARTNER | SPONSOR | VENUE
 
   event Event @relation(fields: [eventId], references: [id])
 
-  @@index([eventId])
-  @@index([eventId, status])
-  @@index([eventId, saleStart, saleEnd])
+  @@index([eventId, displayOrder])
 }
 
-model EventUpdate {
-  id          String   @id @default(uuid())
-  eventId     String
-  authorId    String
-  updateType  String
-  message     String
-  visibility  String   @default("PUBLIC")
-  isPinned    Boolean  @default(false)
-  publishedAt DateTime @default(now())
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+// ───────────────────────────────────────────────
+// TICKET TYPES
+// ───────────────────────────────────────────────
 
-  event  Event @relation(fields: [eventId], references: [id])
-  author User  @relation("EventUpdateAuthor", fields: [authorId], references: [id])
-
-  @@index([eventId, publishedAt])
-  @@index([eventId, visibility])
-}
-
-model EventScheduleItem {
-  id          String   @id @default(uuid())
-  eventId     String
-  authorId    String
-  title       String
-  description String?
-  startTime   String
-  endTime     String?
-  sortOrder   Int      @default(0)
-  isPublished Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  event  Event @relation(fields: [eventId], references: [id])
-  author User  @relation(fields: [authorId], references: [id])
-
-  @@index([eventId, sortOrder])
-}
-
-model Announcement {
-  id            String   @id @default(uuid())
-  eventId       String?  // null = platform-wide announcement
-  authorId      String
-  title         String
-  message       String
-  type          String
-  visibility    String   @default("PUBLIC")
-  priority      String   @default("NORMAL")
-  isDismissible Boolean  @default(true)
-  isPinned      Boolean  @default(false)
-  startsAt      DateTime @default(now())
-  expiresAt     DateTime?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  event  Event? @relation(fields: [eventId], references: [id])
-  author User   @relation(fields: [authorId], references: [id])
-
-  @@index([eventId, startsAt, expiresAt])
-  @@index([type, priority])
-}
-
-model EventMedia {
-  id           String   @id @default(uuid())
-  eventId      String
-  authorId     String
-  mediaType    String
-  url          String?
-  thumbnailUrl String?
-  title        String?
-  caption      String?
-  credits      String?
-  sortOrder    Int      @default(0)
-  accessMode   String   @default("PUBLIC")
-  isPublished  Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  event  Event @relation(fields: [eventId], references: [id])
-  author User  @relation(fields: [authorId], references: [id])
-
-  @@index([eventId, sortOrder])
-  @@index([eventId, accessMode, isPublished])
-}
-
-model EventExternalLink {
-  id          String   @id @default(uuid())
-  eventId     String
-  authorId    String
-  linkType    String
-  url         String
-  title       String?
-  accessMode  String   @default("PUBLIC")
-  isPublished Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  event  Event @relation(fields: [eventId], references: [id])
-  author User  @relation(fields: [authorId], references: [id])
-
-  @@index([eventId, accessMode])
-}
-
-model EventGalleryItem {
-  id           String   @id @default(uuid())
-  eventId      String
-  authorId     String
-  imageUrl     String
-  thumbnailUrl String?
-  title        String?
-  caption      String?
-  credits      String?
-  altText      String?
-  sortOrder    Int      @default(0)
-  mediaType    String   @default("IMAGE")
-  isPublished  Boolean  @default(true)
-  createdAt    DateTime @default(now())
-
-  event  Event @relation(fields: [eventId], references: [id])
-  author User  @relation(fields: [authorId], references: [id])
-
-  @@index([eventId, sortOrder])
-}
-
-model EventFAQ {
-  id          String   @id @default(uuid())
-  eventId     String
-  authorId    String
-  question    String
-  answer      String
-  sortOrder   Int      @default(0)
-  isPublished Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  event  Event @relation(fields: [eventId], references: [id])
-  author User  @relation(fields: [authorId], references: [id])
-
-  @@index([eventId, sortOrder])
-}
-
-model EventPerformer {
+model TicketType {
   id          String   @id @default(uuid())
   eventId     String
   name        String
-  bio         String?
-  imageUrl    String?
-  instrument  String?
-  role        String   @default("PERFORMER")
-  sortOrder   Int      @default(0)
-  isPublished Boolean  @default(true)
+  description String?
+  price       Int      @default(0)        // in cents (0 = free)
+  currency    String   @default("INR")
+  capacity    Int      @default(0)
+  soldCount   Int      @default(0)
+  maxPerOrder Int      @default(10)
+  saleStartAt DateTime?
+  saleEndAt   DateTime?
+  active      Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  event Event @relation(fields: [eventId], references: [id])
+  event     Event           @relation(fields: [eventId], references: [id])
+  attendees OrderAttendee[]
+  tickets   Ticket[]
 
-  @@index([eventId, sortOrder])
+  @@index([eventId])
+  @@index([eventId, active])
 }
 
-model EventStory {
-  id            String   @id @default(uuid())
-  eventId       String   @unique
-  authorId      String
-  summary       String
-  highlights    String   @default("[]")
-  organizerNote String?
-  isPublished   Boolean  @default(true)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  event  Event @relation(fields: [eventId], references: [id])
-  author User  @relation(fields: [authorId], references: [id])
-}
-
-model EventJournal {
-  id          String   @id @default(uuid())
-  eventId     String
-  authorId    String
-  content     String
-  isPublished Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  event  Event @relation(fields: [eventId], references: [id])
-  author User  @relation(fields: [authorId], references: [id])
-
-  @@index([eventId, createdAt])
-}
-
-model AppreciationMessage {
-  id          String   @id @default(uuid())
-  eventId     String
-  userId      String
-  message     String
-  isAnonymous Boolean  @default(false)
-  isApproved  Boolean  @default(false)
-  targetType  String   @default("ORGANIZER")
-  createdAt   DateTime @default(now())
-  moderatedAt DateTime?
-  moderatedBy String?  // User ID of the organizer who approved/rejected
-
-  event Event @relation(fields: [eventId], references: [id])
-  user  User  @relation(fields: [userId], references: [id])
-
-  @@index([eventId, isApproved])
-  @@index([eventId, createdAt])
-}
+// ───────────────────────────────────────────────
+// ORDER
+// ───────────────────────────────────────────────
 
 model Order {
   id                String    @id @default(uuid())
   orderNumber       String    @unique
   eventId           String
   userId            String
-  bookingType       String    @default("SOLO")
-  attendeeCount     Int       @default(1)
-  totalAmount       Int?
-  currency          String    @default("USD")
-  status            String    @default("PENDING_PAYMENT")
-  paymentProvider   String?
-  externalPaymentId String?
-  paymentConfirmedAt DateTime?
-  notes             String?
+  status            String    @default("PENDING_PAYMENT")  // PENDING_PAYMENT | CONFIRMED | FAILED | EXPIRED | CANCELLED
+  subtotal          Int       @default(0)
+  fees              Int       @default(0)
+  total             Int       @default(0)
+  currency          String    @default("INR")
+  paymentProvider   String?   // stripe | utr | test
+  paymentReference  String?
+  expiresAt         DateTime?
+  paidAt            DateTime?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
-  event     Event            @relation(fields: [eventId], references: [id])
-  user      User             @relation(fields: [userId], references: [id])
-  payments  Payment[]
+  event     Event           @relation(fields: [eventId], references: [id])
+  user      User            @relation(fields: [userId], references: [id])
   attendees OrderAttendee[]
   tickets   Ticket[]
+  payments  Payment[]
 
   @@index([orderNumber])
   @@index([eventId])
@@ -391,139 +179,141 @@ model Order {
   @@index([status])
 }
 
-model Payment {
-  id                    String   @id @default(uuid())
-  orderId               String
-  amount                Int
-  currency              String   @default("USD")
-  method                String   @default("STRIPE")
-  status                String   @default("PENDING")
-  utrNumber             String?  @unique // 12-digit UPI UTR/Ref number for UTR payments
-  providerPaymentId String?
-  providerSessionId String?
-  verifiedAt        DateTime?
-  refundedAt        DateTime?
-  utrBatchId        String?
-  metadata              String   @default("{}")
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
-
-  order     Order     @relation(fields: [orderId], references: [id])
-  utrBatch  UtrBatch? @relation(fields: [utrBatchId], references: [id])
-
-  @@index([orderId])
-  @@index([utrNumber])
-  @@index([status])
-  @@index([utrBatchId])
-}
-
-/// A batch of UTR numbers uploaded from a bank statement CSV
-model UtrBatch {
-  id              String   @id @default(uuid())
-  eventId         String
-  uploadedById    String
-  filename        String
-  rowCount        Int      @default(0)
-  matchedCount    Int      @default(0)
-  unmatchedCount  Int      @default(0)
-  status          String   @default("PROCESSING") // PROCESSING, COMPLETED, FAILED
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  event    Event     @relation(fields: [eventId], references: [id])
-  uploaded User      @relation("UtrBatchUploader", fields: [uploadedById], references: [id])
-  records  UtrRecord[]
-  payments Payment[]
-
-  @@index([eventId])
-  @@index([status])
-}
-
-/// Individual UTR record extracted from a bank statement CSV
-model UtrRecord {
-  id              String   @id @default(uuid())
-  batchId         String
-  utrNumber       String
-  amount          Int?     // Amount in cents, if available from statement
-  transactionDate DateTime?
-  senderName      String?
-  senderVpa       String?
-  isMatched       Boolean  @default(false)
-  matchedPaymentId String?
-  createdAt       DateTime @default(now())
-
-  batch   UtrBatch @relation(fields: [batchId], references: [id])
-
-  @@unique([batchId, utrNumber])
-  @@index([batchId])
-  @@index([utrNumber])
-  @@index([isMatched])
-}
-
 model OrderAttendee {
-  id          String   @id @default(uuid())
-  orderId     String
-  ticketId    String?  @unique // null until ticket is generated after payment
-  fullName    String
-  email       String?
-  phone       String?
-  ticketCategory String?  // free-text category label (General, VIP, Early Bird, etc.)
-  isCheckedIn Boolean  @default(false)
-  checkedInAt DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id            String   @id @default(uuid())
+  orderId       String
+  ticketTypeId  String
+  attendeeName  String
+  attendeeEmail String?
+  attendeePhone String?
+  createdAt     DateTime @default(now())
 
-  order  Order   @relation(fields: [orderId], references: [id])
-  ticket Ticket?
+  order      Order      @relation(fields: [orderId], references: [id])
+  ticketType TicketType @relation(fields: [ticketTypeId], references: [id])
+  ticket     Ticket?    // null until ticket generated after payment
 
   @@index([orderId])
-  @@index([ticketId])
-  @@index([fullName])
+  @@index([attendeeEmail])
 }
+
+// ───────────────────────────────────────────────
+// PAYMENT
+// ───────────────────────────────────────────────
+
+model Payment {
+  id                String    @id @default(uuid())
+  orderId           String
+  amount            Int
+  currency          String    @default("INR")
+  method            String    // stripe | utr | test | free
+  status            String    @default("PENDING")  // PENDING | SUCCEEDED | FAILED | REFUNDED
+  utrNumber         String?   @unique  // 12-digit UPI UTR/Ref number
+  providerPaymentId String?
+  verifiedAt        DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  order Order @relation(fields: [orderId], references: [id])
+
+  @@index([orderId])
+  @@index([status])
+  @@index([utrNumber])
+}
+
+// ───────────────────────────────────────────────
+// TICKET
+// ───────────────────────────────────────────────
 
 model Ticket {
-  id            String   @id @default(uuid())
-  ticketNumber  String   @unique
-  eventId       String
-  userId        String
-  orderId       String?
-  attendeeId    String?  @unique
-  type          String   @default("FREE")
-  category      String?  // GENERAL, VIP, EARLY_BIRD, etc.
-  status        String   @default("CONFIRMED")
-  priceAmount   Int?
-  qrDataUrl     String
-  qrSecret      String
-  purchasedAt   DateTime @default(now())
-  cancelledAt   DateTime?
-  expiredAt     DateTime?
-  entryGate     String?
-  zone          String?
-  seat          String?
+  id               String    @id @default(uuid())
+  ticketNumber     String    @unique
+  eventId          String
+  userId           String
+  orderId          String?
+  orderAttendeeId  String?   @unique
+  ticketTypeId     String
+  status           String    @default("CONFIRMED")  // CONFIRMED | CHECKED_IN | CANCELLED | EXPIRED
+  qrTokenHash      String?   @unique
+  templateVersion  Int       @default(1)
+  pngObjectKey     String?
+  pdfObjectKey     String?
+  renderingStatus  String    @default("PENDING")    // PENDING | COMPLETED | FAILED
+  checkedInAt      DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
-  event   Event           @relation(fields: [eventId], references: [id])
-  user    User            @relation(fields: [userId], references: [id])
-  order   Order?          @relation(fields: [orderId], references: [id])
-  attendee OrderAttendee? @relation(fields: [attendeeId], references: [id])
-  checkIn CheckIn?
+  event      Event          @relation(fields: [eventId], references: [id])
+  user       User           @relation(fields: [userId], references: [id])
+  order      Order?         @relation(fields: [orderId], references: [id])
+  attendee   OrderAttendee? @relation(fields: [orderAttendeeId], references: [id])
+  ticketType TicketType     @relation(fields: [ticketTypeId], references: [id])
+  checkIn    CheckIn?
 
   @@index([ticketNumber])
   @@index([eventId])
   @@index([userId])
-  @@index([status])
-  @@index([eventId, userId])
   @@index([orderId])
+  @@index([status])
 }
 
+// ───────────────────────────────────────────────
+// TICKET TEMPLATE
+// ───────────────────────────────────────────────
+
+model TicketTemplate {
+  id              String   @id @default(uuid())
+  eventId         String
+  version         Int      @default(1)
+  sourceObjectKey String
+  width           Int
+  height          Int
+  outputFormat    String   @default("PNG")
+  active          Boolean  @default(false)
+  lockedAt        DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  event  Event                @relation(fields: [eventId], references: [id])
+  fields TicketTemplateField[]
+
+  @@unique([eventId, version])
+  @@index([eventId, active])
+}
+
+model TicketTemplateField {
+  id              String  @id @default(uuid())
+  templateId      String
+  fieldName       String  // EVENT_NAME | EVENT_DATE | EVENT_TIME | VENUE_NAME | VENUE_ADDRESS | ATTENDEE_NAME | TICKET_TYPE | QUANTITY | TICKET_NUMBER | ORDER_NUMBER | QR_CODE | BARCODE
+  x               Int
+  y               Int
+  width           Int
+  height          Int
+  fontFamily      String  @default("Inter")
+  fontSize        Int     @default(24)
+  minimumFontSize Int     @default(10)
+  fontWeight      String  @default("normal")
+  alignment       String  @default("left")
+  textTransform   String  @default("none")
+  color           String  @default("#000000")
+  visible         Boolean @default(true)
+
+  template TicketTemplate @relation(fields: [templateId], references: [id])
+
+  @@index([templateId])
+}
+
+// ───────────────────────────────────────────────
+// CHECK-IN
+// ───────────────────────────────────────────────
+
 model CheckIn {
-  id        String   @id @default(uuid())
-  ticketId  String   @unique
-  eventId   String
-  scannerId String
-  status    String   @default("SUCCESS") // SUCCESS, DUPLICATE, INVALID, CANCELLED
-  method    String   @default("QR")
-  timestamp DateTime @default(now())
-  metadata  String   @default("{}")
+  id           String   @id @default(uuid())
+  ticketId     String   @unique
+  eventId      String
+  scannerId    String
+  checkedInAt  DateTime @default(now())
+  deviceInfo   String?
+  result       String   @default("VALID")   // VALID | ALREADY_CHECKED_IN | INVALID | WRONG_EVENT | PAYMENT_NOT_CONFIRMED
 
   ticket  Ticket @relation(fields: [ticketId], references: [id])
   event   Event  @relation(fields: [eventId], references: [id])
@@ -533,117 +323,41 @@ model CheckIn {
   @@index([ticketId])
 }
 
-model MediaAccessLog {
-  id        String   @id @default(uuid())
-  mediaId   String
-  userId    String
-  eventId   String
-  action    String   // ACCESS_GRANTED, ACCESS_DENIED, LINK_REVEALED
-  reason    String?
-  ipAddress String?
-  timestamp DateTime @default(now())
-
-  user  User  @relation(fields: [userId], references: [id])
-  event Event @relation(fields: [eventId], references: [id])
-
-  @@index([mediaId, timestamp])
-  @@index([userId])
-}
-
-model WaitlistEntry {
-  id         String   @id @default(uuid())
-  eventId    String
-  userId     String
-  position   Int
-  status     String   @default("WAITING")
-  joinedAt   DateTime @default(now())
-  promotedAt DateTime?
-
-  event Event @relation(fields: [eventId], references: [id])
-  user  User  @relation(fields: [userId], references: [id])
-
-  @@unique([eventId, userId])
-  @@index([eventId, position])
-}
-
-model Notification {
-  id        String   @id @default(uuid())
-  userId    String
-  type      String
-  title     String
-  message   String
-  read      Boolean  @default(false)
-  link      String?
-  createdAt DateTime @default(now())
-
-  user User @relation(fields: [userId], references: [id])
-
-  @@index([userId, read])
-  @@index([userId, createdAt])
-}
-
-model ContactMessage {
-  id        String   @id @default(uuid())
-  name      String
-  email     String
-  subject   String
-  message   String
-  category  String?
-  eventId   String?
-  read      Boolean  @default(false)
-  createdAt DateTime @default(now())
-
-  @@index([email])
-  @@index([createdAt])
-  @@index([category])
-}
+// ───────────────────────────────────────────────
+// AUDIT LOG
+// ───────────────────────────────────────────────
 
 model AuditLog {
   id         String   @id @default(uuid())
+  actorId    String?
+  eventId    String?
   action     String
   entityType String
   entityId   String
-  actorId    String?
   metadata   String   @default("{}")
-  ipAddress  String?
-  userAgent  String?
-  timestamp  DateTime @default(now())
+  createdAt  DateTime @default(now())
 
-  actor User? @relation(fields: [actorId], references: [id])
+  actor User?  @relation(fields: [actorId], references: [id])
+  event Event? @relation(fields: [eventId], references: [id])
 
   @@index([entityType, entityId])
   @@index([action])
-  @@index([timestamp])
+  @@index([createdAt])
 }
 
-model EventOrganizer {
-  id        String   @id @default(uuid())
-  eventId   String
-  userId    String
-  role      String   @default("CO_ORGANIZER")
-  createdAt DateTime @default(now())
+// ───────────────────────────────────────────────
+// PAYMENT WEBHOOK IDEMPOTENCY
+// ───────────────────────────────────────────────
 
-  event Event @relation(fields: [eventId], references: [id])
-  user  User  @relation(fields: [userId], references: [id])
-
-  @@unique([eventId, userId])
-  @@index([eventId])
-  @@index([userId])
-}
-
-/// Webhook events from payment providers. Prevents duplicate webhook processing.
-model WebhookEvent {
-  id                String   @id @default(uuid())
-  provider          String   // stripe, etc.
-  externalEventId   String   // Provider's event ID (e.g., Stripe event ID)
-  eventType         String   // payment_intent.succeeded, etc.
-  processingStatus  String   @default("PENDING") // PENDING, PROCESSED, FAILED
-  errorMessage      String?
-  rawBody           String?  // Raw webhook payload for debugging
-  processedAt       DateTime?
-  createdAt         DateTime @default(now())
+model PaymentWebhookEvent {
+  id               String    @id @default(uuid())
+  provider         String    // stripe | utr | test
+  externalEventId  String    // Provider's unique event ID
+  payloadHash      String?
+  processingStatus String    @default("PENDING")  // PENDING | PROCESSED | FAILED
+  processedAt      DateTime?
+  createdAt        DateTime  @default(now())
 
   @@unique([provider, externalEventId])
   @@index([processingStatus])
-  @@index([createdAt])
 }
