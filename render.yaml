@@ -90,6 +90,10 @@ services:
       - key: DIRECT_URL
         sync: false
 
+      # ── Build & Tooling ──────────────────────────────────
+      - key: HUSKY
+        value: "0"
+
       # ── Feature Flags (staging-safe) ────────────────────
       - key: ENABLE_TEST_PAYMENT
         value: "true"

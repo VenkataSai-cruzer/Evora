@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-import { hash } from 'bcryptjs';
+import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
@@ -14,32 +14,36 @@ async function main() {
   console.log('');
 
   // ── Admin User ──────────────────────────────────────────
-  const adminPassword = await hash('admin123', 12);
+  const adminEmail = process.env.STAGING_ADMIN_EMAIL || 'admin@7notes.in';
+  const adminPasswordRaw = process.env.STAGING_ADMIN_PASSWORD || 'admin123';
+  const adminPassword = await bcrypt.hash(adminPasswordRaw, 12);
   const admin = await prisma.user.upsert({
-    where: { email: 'admin@7notes.in' },
+    where: { email: adminEmail },
     update: {},
     create: {
-      email: 'admin@7notes.in',
+      email: adminEmail,
       name: '7 NOTES Admin',
       passwordHash: adminPassword,
       role: 'ADMIN',
     },
   });
-  console.log(`  ✓ Admin: ${admin.email} / admin123`);
+  console.log(`  ✓ Admin: ${admin.email} / ${adminPasswordRaw}`);
 
   // ── Demo Attendee ───────────────────────────────────────
-  const attendeePassword = await hash('attendee123', 12);
+  const attendeeEmail = process.env.STAGING_ATTENDEE_EMAIL || 'attendee@7notes.in';
+  const attendeePasswordRaw = process.env.STAGING_ATTENDEE_PASSWORD || 'attendee123';
+  const attendeePassword = await bcrypt.hash(attendeePasswordRaw, 12);
   const attendee = await prisma.user.upsert({
-    where: { email: 'attendee@7notes.in' },
+    where: { email: attendeeEmail },
     update: {},
     create: {
-      email: 'attendee@7notes.in',
+      email: attendeeEmail,
       name: 'Jam Fan',
       passwordHash: attendeePassword,
       role: 'ATTENDEE',
     },
   });
-  console.log(`  ✓ Attendee: ${attendee.email} / attendee123`);
+  console.log(`  ✓ Attendee: ${attendee.email} / ${attendeePasswordRaw}`);
 
   // ── Draft Event (for testing admin setup) ───────────────
   const nextWeek = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);

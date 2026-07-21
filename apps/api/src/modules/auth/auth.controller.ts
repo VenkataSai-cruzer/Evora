@@ -1,5 +1,5 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
-import { hash, compare } from 'bcryptjs';
+import bcrypt from 'bcryptjs';
 import { prisma } from '../../infrastructure/database/prisma.js';
 import {
   generateSessionToken,
@@ -21,7 +21,7 @@ export class AuthController {
       return reply.status(409).send({ error: 'Email already registered' });
     }
 
-    const passwordHash = await hash(password, 12);
+    const passwordHash = await bcrypt.hash(password, 12);
 
     const user = await prisma.user.create({
       data: { name, email, passwordHash, role: 'ATTENDEE' },
@@ -65,7 +65,7 @@ export class AuthController {
       return reply.status(401).send({ error: 'Invalid credentials' });
     }
 
-    const valid = await compare(password, user.passwordHash);
+    const valid = await bcrypt.compare(password, user.passwordHash);
     if (!valid) {
       return reply.status(401).send({ error: 'Invalid credentials' });
     }
@@ -118,6 +118,16 @@ export class AuthController {
   async session(request: FastifyRequest, _reply: FastifyReply) {
     return {
       user: request.user,
+    };
+  }
+
+  async csrf(request: FastifyRequest, _reply: FastifyReply) {
+    const sessionToken = request.cookies?.session_token;
+    if (!sessionToken) {
+      return { csrfToken: null };
+    }
+    return {
+      csrfToken: generateCsrfToken(sessionToken),
     };
   }
 }
