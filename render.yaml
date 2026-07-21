@@ -28,11 +28,10 @@ services:
       npx prisma generate --schema=prisma/schema.prisma
       npm run build --workspace=apps/api
 
-    startCommand: npm run start --workspace=apps/api
+    # preDeployCommand not supported on free tier — migrations run inline in startCommand
+    startCommand: npx prisma migrate deploy --schema=prisma/schema.prisma && npm run start --workspace=apps/api
 
     healthCheckPath: /api/v1/ready
-
-    preDeployCommand: npx prisma migrate deploy --schema=prisma/schema.prisma
 
     autoDeploy: true
     numInstances: 1
