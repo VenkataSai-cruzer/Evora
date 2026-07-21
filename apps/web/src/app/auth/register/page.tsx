@@ -67,9 +67,8 @@ export default function RegisterPage() {
       });
 
       if (result.user) {
-        // Registration creates a session, just refresh and redirect
         await refresh();
-        router.push('/');
+        router.replace('/');
         router.refresh();
       } else {
         setError('Registration failed. Please try again.');
@@ -91,11 +90,10 @@ export default function RegisterPage() {
         {/* Header */}
         <div className="mb-8 text-center">
           <Link href="/" className="inline-flex items-center gap-2 text-lg font-bold text-white">
-            <span className="text-xl">🎵</span>
-            Jamming
+            ✦ 7 NOTES
           </Link>
-          <h1 className="mt-6 text-2xl font-bold text-white">Join the community</h1>
-          <p className="mt-1 text-sm text-text-secondary">Create your account and start jamming</p>
+          <h1 className="mt-6 text-2xl font-bold text-white">Create your account</h1>
+          <p className="mt-1 text-sm text-text-secondary">Join 7 NOTES and start booking events</p>
         </div>
 
         {/* Form */}
@@ -110,8 +108,8 @@ export default function RegisterPage() {
           )}
 
           <Input
-            label="Display Name"
-            placeholder="Alex Rivera"
+            label="Full Name"
+            placeholder="Your name"
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
             error={fieldErrors.displayName}

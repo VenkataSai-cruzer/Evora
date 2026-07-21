@@ -16,11 +16,11 @@ export function Footer() {
           {/* Brand */}
           <div className="sm:col-span-2 lg:col-span-1">
             <Link href="/" className="flex items-center gap-2 text-lg font-bold text-white">
-              <span className="text-xl">🎵</span>
-              Jamming
+              <span className="text-xl">✦</span>
+              7 NOTES
             </Link>
             <p className="mt-3 max-w-xs text-sm leading-relaxed text-text-muted">
-              Austin&apos;s community for live music jamming sessions. Discover, book, and play.
+              The official event platform for 7 NOTES. Live music, real connections.
             </p>
           </div>
 
@@ -58,29 +58,24 @@ export function Footer() {
             </ul>
           </div>
 
-          {/* Community */}
+          {/* Connect */}
           <div>
-            <h3 className="text-sm font-semibold text-white">Community</h3>
+            <h3 className="text-sm font-semibold text-white">Connect</h3>
             <ul className="mt-3 space-y-2">
-              <li>
-                <a href="#" className="text-sm text-text-secondary transition-colors hover:text-white">
-                  Discord
-                </a>
-              </li>
               <li>
                 <a href="#" className="text-sm text-text-secondary transition-colors hover:text-white">
                   Instagram
                 </a>
               </li>
               <li>
-                <span className="text-sm text-text-muted">hello@jamming.events</span>
+                <span className="text-sm text-text-muted">hello@7notes.in</span>
               </li>
             </ul>
           </div>
         </div>
 
         <div className="mt-10 border-t border-[var(--color-border)] pt-6 text-center text-sm text-text-muted">
-          &copy; {new Date().getFullYear()} Jamming. Made for musicians.
+          &copy; {new Date().getFullYear()} 7 NOTES. All rights reserved.
         </div>
       </div>
     </footer>

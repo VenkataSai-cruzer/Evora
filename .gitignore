@@ -12,6 +12,9 @@ build/
 .open-next/
 .wrangler/
 
+# Raw uploaded assets (use brand/ directory with clean filenames)
+/assets
+
 # Environment
 .env
 .env.local

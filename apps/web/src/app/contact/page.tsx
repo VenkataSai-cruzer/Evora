@@ -45,10 +45,12 @@ export default function ContactPage() {
     setIsLoading(true);
 
     try {
-      const res = await fetch('/api/contact', {
+      // Post to backend API instead of Next.js API route
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:10000/api/v1'}/contact`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(parsed.data),
+        credentials: 'include',
       });
 
       const data = await res.json();
@@ -186,7 +188,7 @@ export default function ContactPage() {
           <div className="text-center">
             <div className="text-2xl">📧</div>
             <p className="mt-2 text-sm font-medium text-white">Email</p>
-            <p className="text-xs text-text-muted">hello@jamming.events</p>
+            <p className="text-xs text-text-muted">hello@7notes.in</p>
           </div>
           <div className="text-center">
             <div className="text-2xl">📍</div>
@@ -196,7 +198,7 @@ export default function ContactPage() {
           <div className="text-center">
             <div className="text-2xl">🎵</div>
             <p className="mt-2 text-sm font-medium text-white">Community</p>
-            <p className="text-xs text-text-muted">Discord & Instagram</p>
+            <p className="text-xs text-text-muted">Instagram</p>
           </div>
         </div>
       </div>

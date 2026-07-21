@@ -1,7 +1,3 @@
-// v2 — deployed via GitHub Actions auto-deploy
-// Frontend: https://evora.7notes.workers.dev
-// Backend:  https://seven-notes-api.onrender.com
-
 export const dynamic = 'force-dynamic';
 
 import Link from 'next/link';
@@ -19,25 +15,25 @@ export default async function HomePage() {
   return (
     <div className="min-h-screen">
       {/* Hero Section */}
-      <section className="relative flex min-h-[80vh] items-center justify-center overflow-hidden">
+      <section className="relative flex min-h-[85vh] items-center justify-center overflow-hidden">
         <div className="absolute inset-0">
-          <div className="absolute inset-0 bg-gradient-to-br from-primary/20 via-transparent to-transparent" />
-          <div className="absolute left-1/2 top-1/2 h-[500px] w-[500px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary/10 blur-[100px]" />
+          <div className="absolute inset-0 bg-gradient-to-br from-primary/15 via-transparent to-transparent" />
+          <div className="absolute left-1/2 top-1/3 h-[600px] w-[600px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary/5 blur-[120px]" />
         </div>
 
         <div className="page-container relative z-10 text-center">
           <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-4 py-1.5 text-xs font-medium text-primary-light">
             <span className="h-1.5 w-1.5 rounded-full bg-success animate-pulse" />
             {events.length > 0
-              ? `${events.length} upcoming ${events.length === 1 ? 'session' : 'sessions'}`
-              : 'Live music community'}
+              ? `${events.length} upcoming ${events.length === 1 ? 'event' : 'events'}`
+              : 'Live music platform'}
           </div>
 
           <h1 className="text-5xl font-extrabold tracking-tight text-white sm:text-6xl lg:text-7xl">
-            Where Music Happens
+            7 NOTES
           </h1>
-          <p className="mx-auto mt-6 max-w-2xl text-lg text-text-secondary">
-            Discover, book, and jam with Austin&apos;s best musicians. From spontaneous sessions to organized nights.
+          <p className="mx-auto mt-4 max-w-xl text-lg text-text-secondary">
+            Live music events, real connections. Book your spot for the next session.
           </p>
           <div className="mt-8 flex items-center justify-center gap-4">
             <Link
@@ -51,7 +47,7 @@ export default async function HomePage() {
               href="/about"
               className="rounded-lg border border-[var(--color-border)] px-6 py-3 font-medium text-text-secondary transition-all hover:bg-surface-hover"
             >
-              About Jamming
+              About 7 NOTES
             </Link>
           </div>
         </div>
@@ -60,7 +56,7 @@ export default async function HomePage() {
       {/* Upcoming Events Preview */}
       <section className="page-container py-16">
         <div className="flex items-center justify-between">
-          <h2 className="section-title">Upcoming Jams</h2>
+          <h2 className="text-2xl font-bold text-white">Upcoming Events</h2>
           <Link
             href="/events"
             className="text-sm font-medium text-primary transition-colors hover:text-primary-hover"
@@ -91,7 +87,7 @@ export default async function HomePage() {
                       />
                     ) : (
                       <div className="flex h-full items-center justify-center">
-                        <span className="text-4xl opacity-30">🎵</span>
+                        <span className="text-4xl opacity-20">✦</span>
                       </div>
                     )}
                   </div>
@@ -118,9 +114,9 @@ export default async function HomePage() {
         ) : (
           <div className="mt-8 rounded-xl border border-[var(--color-border)] bg-surface p-12">
             <EmptyState
-              icon="🎵"
+              icon="✦"
               title="No upcoming events"
-              description="There are no events scheduled yet. Check back later for new jamming sessions."
+              description="There are no events scheduled yet. Check back later."
               actionHref={{ label: 'Browse Events', href: '/events' }}
             />
           </div>
@@ -129,11 +125,9 @@ export default async function HomePage() {
 
       {/* Stats */}
       <section className="border-t border-[var(--color-border)] bg-surface/50">
-        <div className="page-container grid grid-cols-2 gap-8 py-12 sm:grid-cols-4">
+        <div className="page-container flex justify-center gap-16 py-12">
           {[
             { value: totalEvents > 0 ? `${totalEvents}` : '0', label: 'Events Hosted' },
-            { value: '0', label: 'Musicians' },
-            { value: totalEvents > 0 ? `${totalEvents}` : '0', label: 'Venues' },
             { value: totalTickets > 0 ? `${totalTickets}` : '0', label: 'Tickets Issued' },
           ].map((stat) => (
             <div key={stat.label} className="text-center">
@@ -144,33 +138,34 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* How It Works */}
+      {/* About Section */}
       <section className="page-container py-16">
-        <h2 className="section-title text-center">How It Works</h2>
-        <div className="mt-12 grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
-          {[
-            { icon: '🎵', title: 'Find', desc: 'Browse upcoming jamming sessions near you' },
-            { icon: '🎫', title: 'Book', desc: 'Grab your free ticket in one click' },
-            { icon: '🎸', title: 'Jam', desc: 'Show up, scan your QR, and play' },
-            { icon: '📸', title: 'Share', desc: 'Connect with musicians and share the experience' },
-          ].map((step) => (
-            <div key={step.title} className="text-center">
-              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-surface-elevated">
-                <span className="text-2xl">{step.icon}</span>
+        <div className="mx-auto max-w-3xl">
+          <h2 className="text-2xl font-bold text-white text-center">The platform for live music events</h2>
+          <div className="mt-12 grid gap-8 sm:grid-cols-3 lg:grid-cols-3">
+            {[
+              { title: 'Discover', desc: 'Browse upcoming events and find your next live experience.' },
+              { title: 'Book', desc: 'Reserve your spot in minutes. No hidden steps.' },
+              { title: 'Attend', desc: 'Show up, check in, and enjoy the music.' },
+            ].map((step) => (
+              <div key={step.title} className="text-center">
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-surface-elevated">
+                  <span className="text-xl font-bold text-primary">{step.title[0]}</span>
+                </div>
+                <h3 className="mt-4 text-lg font-semibold text-white">{step.title}</h3>
+                <p className="mt-2 text-sm text-text-secondary">{step.desc}</p>
               </div>
-              <h3 className="mt-4 text-lg font-semibold text-white">{step.title}</h3>
-              <p className="mt-2 text-sm text-text-secondary">{step.desc}</p>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       </section>
 
       {/* CTA */}
       <section className="border-t border-[var(--color-border)] py-16">
         <div className="page-container text-center">
-          <h2 className="text-3xl font-bold text-white">Ready to jam?</h2>
+          <h2 className="text-3xl font-bold text-white">Ready for your next event?</h2>
           <p className="mx-auto mt-2 max-w-md text-text-secondary">
-            Join Austin&apos;s music community. Create an account and start booking sessions today.
+            Create an account and start booking tickets for 7 NOTES events.
           </p>
           <div className="mt-8 flex items-center justify-center gap-4">
             <Link

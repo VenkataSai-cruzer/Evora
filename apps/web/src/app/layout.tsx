@@ -14,10 +14,14 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: {
-    default: 'Jamming — Where Music Happens',
-    template: '%s — Jamming',
+    default: '7 NOTES — Official Event Platform',
+    template: '%s — 7 NOTES',
   },
-  description: "Discover, book, and jam with Austin's best musicians.",
+  description: 'Discover events, book tickets, and experience live music with 7 NOTES.',
+  openGraph: {
+    siteName: '7 NOTES',
+    type: 'website',
+  },
 };
 
 export default function RootLayout({

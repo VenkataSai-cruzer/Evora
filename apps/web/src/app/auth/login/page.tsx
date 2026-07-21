@@ -57,7 +57,8 @@ function LoginForm() {
       const result = await login(email, password);
       if (result.user) {
         await refresh();
-        router.push(callbackUrl);
+        // Use replace instead of push to avoid back-button issues
+        router.replace(callbackUrl);
         router.refresh();
       } else {
         setError('Invalid email or password. Please try again.');
@@ -75,8 +76,7 @@ function LoginForm() {
         {/* Header */}
         <div className="mb-8 text-center">
           <Link href="/" className="inline-flex items-center gap-2 text-lg font-bold text-white">
-            <span className="text-xl">🎵</span>
-            Jamming
+            ✦ 7 NOTES
           </Link>
           <h1 className="mt-6 text-2xl font-bold text-white">Welcome back</h1>
           <p className="mt-1 text-sm text-text-secondary">Sign in to your account</p>

@@ -4,7 +4,7 @@ import { DashboardNav } from './DashboardNav';
 
 export const metadata = {
   title: 'Dashboard',
-  description: 'Organizer dashboard for managing events.',
+  description: 'Your 7 NOTES account dashboard.',
 };
 
 export default async function DashboardLayout({
@@ -18,16 +18,9 @@ export default async function DashboardLayout({
     redirect('/auth/login?callbackUrl=/dashboard');
   }
 
-  const role = session.role;
-  const isOrganizerOrAdmin = role === 'ORGANIZER' || role === 'ADMIN';
-
-  if (!isOrganizerOrAdmin) {
-    redirect('/');
-  }
-
   return (
     <div className="flex min-h-[calc(100vh-4rem)]">
-      <DashboardNav role={role} />
+      <DashboardNav role={session.role} />
       <main className="flex-1 overflow-y-auto p-6 lg:p-8">
         {children}
       </main>

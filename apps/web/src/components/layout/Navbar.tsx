@@ -5,10 +5,25 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/lib/auth-provider';
 import { Button } from '@/components/ui/Button';
 
-const NAV_LINKS = [
+const GUEST_LINKS = [
   { href: '/events', label: 'Events' },
   { href: '/about', label: 'About' },
+  { href: '/faqs', label: 'FAQs' },
   { href: '/contact', label: 'Contact' },
+];
+
+const USER_LINKS = [
+  { href: '/events', label: 'Events' },
+  { href: '/tickets', label: 'My Tickets' },
+  { href: '/dashboard', label: 'Dashboard' },
+  { href: '/profile', label: 'Profile' },
+];
+
+const ADMIN_LINKS = [
+  { href: '/events', label: 'Events' },
+  { href: '/dashboard', label: 'Dashboard' },
+  { href: '/dashboard/payments', label: 'Payments' },
+  { href: '/dashboard/check-in', label: 'Check-in' },
 ];
 
 export function Navbar() {
@@ -35,6 +50,13 @@ export function Navbar() {
     };
   }, [mobileOpen]);
 
+  const role = user?.role || 'GUEST';
+  const isAdmin = role === 'ADMIN';
+  const isLoggedIn = !!user;
+
+  // Determine which nav links to show based on role
+  const navLinks = isAdmin ? ADMIN_LINKS : isLoggedIn ? USER_LINKS : GUEST_LINKS;
+
   return (
     <nav
       className={`fixed inset-x-0 top-0 z-40 transition-all duration-300 ${
@@ -49,13 +71,13 @@ export function Navbar() {
           className="flex items-center gap-2 text-lg font-bold text-white transition-opacity hover:opacity-80"
           onClick={closeMobile}
         >
-          <span className="text-xl">🎵</span>
-          <span className="hidden sm:inline">Jamming</span>
+          <span className="text-xl">✦</span>
+          <span className="hidden sm:inline">7 NOTES</span>
         </Link>
 
         {/* Desktop nav */}
         <div className="hidden items-center gap-1 md:flex">
-          {NAV_LINKS.map((link) => (
+          {navLinks.map((link) => (
             <Link
               key={link.href}
               href={link.href}
@@ -73,16 +95,17 @@ export function Navbar() {
           ) : user ? (
             <div className="flex items-center gap-3">
               <Link
-                href="/tickets"
-                className="rounded-lg px-3 py-2 text-sm font-medium text-text-secondary transition-colors hover:bg-surface-hover hover:text-white"
-              >
-                My Tickets
-              </Link>
-              <Link
                 href="/dashboard"
                 className="rounded-lg px-3 py-2 text-sm font-medium text-text-secondary transition-colors hover:bg-surface-hover hover:text-white"
               >
-                Dashboard
+                {isAdmin ? 'Admin' : 'Dashboard'}
+              </Link>
+              <Link
+                href={isAdmin ? '/dashboard/events' : '/tickets'}
+              >
+                <Button size="sm" variant="primary">
+                  {isAdmin ? 'Manage' : 'My Tickets'}
+                </Button>
               </Link>
               <Button
                 variant="ghost"
@@ -131,7 +154,7 @@ export function Navbar() {
           className="border-t border-[var(--color-border)] p-4 md:hidden animate-fade-in"
         >
           <div className="flex flex-col gap-2">
-            {NAV_LINKS.map((link) => (
+            {navLinks.map((link) => (
               <Link
                 key={link.href}
                 href={link.href}
@@ -145,11 +168,11 @@ export function Navbar() {
             {user ? (
               <>
                 <Link
-                  href="/dashboard"
+                  href={isAdmin ? '/dashboard/events' : '/dashboard'}
                   onClick={closeMobile}
                   className="rounded-lg px-3 py-2.5 text-sm font-medium text-white transition-colors hover:bg-surface-hover"
                 >
-                  Dashboard
+                  {isAdmin ? 'Admin Panel' : 'My Dashboard'}
                 </Link>
                 <button
                   onClick={() => signOut()}
