@@ -1,11 +1,11 @@
-import { Navbar } from './Navbar';
-import { Footer } from './Footer';
+import { Navbar } from '@/components/layout/Navbar';
+import { Footer } from '@/components/layout/Footer';
 
-interface AppShellProps {
+export default function PublicLayout({
+  children,
+}: {
   children: React.ReactNode;
-}
-
-export function AppShell({ children }: AppShellProps) {
+}) {
   return (
     <div className="flex min-h-screen flex-col">
       <Navbar />

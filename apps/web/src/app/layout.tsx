@@ -2,7 +2,6 @@ import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import '@/styles/globals.css';
 import { Providers } from '@/providers';
-import { AppShell } from '@/components/layout/AppShell';
 import { OfflineBanner } from '@/components/ui/OfflineBanner';
 import { StagingBanner } from '@/components/StagingBanner';
 
@@ -34,7 +33,7 @@ export default function RootLayout({
       <body className="min-h-screen bg-[var(--color-bg)] font-sans antialiased">
         <Providers>
           <StagingBanner />
-          <AppShell>{children}</AppShell>
+          {children}
           <OfflineBanner />
         </Providers>
       </body>

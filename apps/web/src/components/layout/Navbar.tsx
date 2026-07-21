@@ -4,27 +4,7 @@ import Link from 'next/link';
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/lib/auth-provider';
 import { Button } from '@/components/ui/Button';
-
-const GUEST_LINKS = [
-  { href: '/events', label: 'Events' },
-  { href: '/about', label: 'About' },
-  { href: '/faqs', label: 'FAQs' },
-  { href: '/contact', label: 'Contact' },
-];
-
-const USER_LINKS = [
-  { href: '/events', label: 'Events' },
-  { href: '/tickets', label: 'My Tickets' },
-  { href: '/dashboard', label: 'Dashboard' },
-  { href: '/profile', label: 'Profile' },
-];
-
-const ADMIN_LINKS = [
-  { href: '/events', label: 'Events' },
-  { href: '/dashboard', label: 'Dashboard' },
-  { href: '/dashboard/payments', label: 'Payments' },
-  { href: '/dashboard/check-in', label: 'Check-in' },
-];
+import { PUBLIC_NAV, USER_NAV } from '@/lib/navigation';
 
 export function Navbar() {
   const { user, loading, signOut } = useAuth();
@@ -50,12 +30,11 @@ export function Navbar() {
     };
   }, [mobileOpen]);
 
-  const role = user?.role || 'GUEST';
-  const isAdmin = role === 'ADMIN';
+  const isAdmin = user?.role === 'ADMIN';
   const isLoggedIn = !!user;
 
-  // Determine which nav links to show based on role
-  const navLinks = isAdmin ? ADMIN_LINKS : isLoggedIn ? USER_LINKS : GUEST_LINKS;
+  // Navigation links derived from centralized config
+  const navLinks = isLoggedIn ? USER_NAV : PUBLIC_NAV;
 
   return (
     <nav
@@ -95,14 +74,12 @@ export function Navbar() {
           ) : user ? (
             <div className="flex items-center gap-3">
               <Link
-                href="/dashboard"
+                href={isAdmin ? '/dashboard' : '/dashboard'}
                 className="rounded-lg px-3 py-2 text-sm font-medium text-text-secondary transition-colors hover:bg-surface-hover hover:text-white"
               >
                 {isAdmin ? 'Admin' : 'Dashboard'}
               </Link>
-              <Link
-                href={isAdmin ? '/dashboard/events' : '/tickets'}
-              >
+              <Link href={isAdmin ? '/dashboard/events' : '/tickets'}>
                 <Button size="sm" variant="primary">
                   {isAdmin ? 'Manage' : 'My Tickets'}
                 </Button>
@@ -168,14 +145,17 @@ export function Navbar() {
             {user ? (
               <>
                 <Link
-                  href={isAdmin ? '/dashboard/events' : '/dashboard'}
+                  href={isAdmin ? '/dashboard' : '/dashboard'}
                   onClick={closeMobile}
                   className="rounded-lg px-3 py-2.5 text-sm font-medium text-white transition-colors hover:bg-surface-hover"
                 >
                   {isAdmin ? 'Admin Panel' : 'My Dashboard'}
                 </Link>
                 <button
-                  onClick={() => signOut()}
+                  onClick={() => {
+                    signOut();
+                    closeMobile();
+                  }}
                   className="rounded-lg px-3 py-2.5 text-left text-sm font-medium text-text-secondary transition-colors hover:bg-surface-hover"
                 >
                   Sign out

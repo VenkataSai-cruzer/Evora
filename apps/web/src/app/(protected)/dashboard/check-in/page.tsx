@@ -1,3 +1,4 @@
+import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { requireRole } from '@/lib/auth';
 
@@ -9,7 +10,8 @@ export const metadata: Metadata = {
 };
 
 export default async function CheckInPage() {
-  await requireRole('ADMIN');
+  const session = await requireRole('ADMIN');
+  if (!session) notFound();
 
   return (
     <div>

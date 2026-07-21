@@ -1,14 +1,10 @@
 import Link from 'next/link';
-
-const FOOTER_LINKS = [
-  { href: '/events', label: 'Events' },
-  { href: '/about', label: 'About' },
-  { href: '/contact', label: 'Contact' },
-  { href: '/legal/privacy', label: 'Privacy' },
-  { href: '/legal/terms', label: 'Terms' },
-];
+import { FOOTER_NAV } from '@/lib/navigation';
 
 export function Footer() {
+  const mainLinks = FOOTER_NAV.slice(0, 3);
+  const legalLinks = FOOTER_NAV.slice(3);
+
   return (
     <footer className="border-t border-[var(--color-border)]">
       <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
@@ -20,7 +16,7 @@ export function Footer() {
               7 NOTES
             </Link>
             <p className="mt-3 max-w-xs text-sm leading-relaxed text-text-muted">
-              The official event platform for 7 NOTES. Live music, real connections.
+              Official event platform for 7 NOTES. Live music, real connections.
             </p>
           </div>
 
@@ -28,7 +24,7 @@ export function Footer() {
           <div>
             <h3 className="text-sm font-semibold text-white">Navigate</h3>
             <ul className="mt-3 space-y-2">
-              {FOOTER_LINKS.slice(0, 3).map((link) => (
+              {mainLinks.map((link) => (
                 <li key={link.href}>
                   <Link
                     href={link.href}
@@ -45,7 +41,7 @@ export function Footer() {
           <div>
             <h3 className="text-sm font-semibold text-white">Legal</h3>
             <ul className="mt-3 space-y-2">
-              {FOOTER_LINKS.slice(3).map((link) => (
+              {legalLinks.map((link) => (
                 <li key={link.href}>
                   <Link
                     href={link.href}
