@@ -1,5 +1,9 @@
 import Link from 'next/link';
 
+// Force dynamic rendering so Next.js returns a true HTTP 404 status
+// instead of static 200 for the custom not-found page.
+export const dynamic = 'force-dynamic';
+
 export default function NotFound() {
   return (
     <div className="flex min-h-[60vh] flex-col items-center justify-center px-4 text-center">
