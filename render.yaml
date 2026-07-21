@@ -12,7 +12,7 @@
 #
 # ── Staging URLs (temp) ──────────────────────────────────
 # Backend:  https://seven-notes-api.onrender.com
-# Frontend: https://evora.workers.dev
+# Frontend: https://evora.7notes.workers.dev
 
 services:
   # ── Backend API (Fastify + Prisma + PostgreSQL) ────────
@@ -52,10 +52,10 @@ services:
 
       # ── URLs (update after frontend deploy) ─────────────
       - key: CORS_ORIGIN
-        value: https://evora.workers.dev
+        value: https://evora.7notes.workers.dev
 
       - key: FRONTEND_URL
-        value: https://evora.workers.dev
+        value: https://evora.7notes.workers.dev
 
       - key: API_BASE_URL
         value: https://seven-notes-api.onrender.com/api/v1
