@@ -1,21 +1,13 @@
 'use client';
 
 import { useState } from 'react';
-import { signIn } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { register } from '@/lib/api-client';
+import { useAuth } from '@/lib/auth-provider';
 import { z } from 'zod';
-
-const INSTRUMENTS = ['Guitar', 'Bass', 'Drums', 'Keys', 'Vocals', 'Saxophone', 'Trumpet', 'Violin', 'Percussion', 'Other'];
-
-const SKILL_LEVELS = [
-  { value: 'BEGINNER', label: 'Beginner' },
-  { value: 'INTERMEDIATE', label: 'Intermediate' },
-  { value: 'ADVANCED', label: 'Advanced' },
-  { value: 'ALL', label: 'All Levels' },
-];
 
 const registerSchema = z.object({
   displayName: z.string().min(2, 'Name must be at least 2 characters').max(50),
@@ -31,28 +23,17 @@ const registerSchema = z.object({
   path: ['confirmPassword'],
 });
 
-// Auth pages use client components. Metadata is handled by the root layout template.
-
 export default function RegisterPage() {
   const router = useRouter();
+  const { refresh } = useAuth();
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [selectedInstruments, setSelectedInstruments] = useState<string[]>([]);
-  const [skillLevel, setSkillLevel] = useState('ALL');
   const [error, setError] = useState('');
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-
-  function toggleInstrument(instrument: string) {
-    setSelectedInstruments((prev) =>
-      prev.includes(instrument)
-        ? prev.filter((i) => i !== instrument)
-        : [...prev, instrument],
-    );
-  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -79,51 +60,27 @@ export default function RegisterPage() {
     setIsLoading(true);
 
     try {
-      const res = await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          displayName,
-          email,
-          password,
-          instruments: JSON.stringify(selectedInstruments),
-          skillLevel,
-        }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        if (res.status === 409) {
-          setError(data.error);
-        } else if (res.status === 422 && data.fieldErrors) {
-          const errors: Record<string, string> = {};
-          for (const [key, msgs] of Object.entries(data.fieldErrors)) {
-            errors[key] = (msgs as string[])[0];
-          }
-          setFieldErrors(errors);
-        } else {
-          setError(data.error || 'Something went wrong. Please try again.');
-        }
-        setIsLoading(false);
-        return;
-      }
-
-      // Auto sign in after registration
-      const signInResult = await signIn('credentials', {
+      const result = await register({
+        name: displayName,
         email,
         password,
-        redirect: false,
       });
 
-      if (signInResult?.ok) {
+      if (result.user) {
+        // Registration creates a session, just refresh and redirect
+        await refresh();
         router.push('/');
         router.refresh();
       } else {
-        router.push('/auth/login');
+        setError('Registration failed. Please try again.');
+        setIsLoading(false);
       }
-    } catch {
-      setError('An unexpected error occurred. Please try again.');
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('An unexpected error occurred. Please try again.');
+      }
       setIsLoading(false);
     }
   }
@@ -204,82 +161,10 @@ export default function RegisterPage() {
             autoComplete="new-password"
           />
 
-          {/* Instruments (optional) */}
-          <fieldset>
-            <legend className="mb-2 text-sm font-medium text-text-secondary">
-              I play (optional)
-            </legend>
-            <div className="flex flex-wrap gap-2">
-              {INSTRUMENTS.map((instrument) => (
-                <button
-                  key={instrument}
-                  type="button"
-                  onClick={() => toggleInstrument(instrument)}
-                  className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-all ${
-                    selectedInstruments.includes(instrument)
-                      ? 'border-primary bg-primary/10 text-primary'
-                      : 'border-[var(--color-border)] text-text-secondary hover:border-primary/30 hover:text-white'
-                  }`}
-                >
-                  {instrument}
-                </button>
-              ))}
-            </div>
-          </fieldset>
-
-          {/* Skill level (optional) */}
-          <fieldset>
-            <legend className="mb-2 text-sm font-medium text-text-secondary">
-              Skill level (optional)
-            </legend>
-            <div className="flex flex-wrap gap-2">
-              {SKILL_LEVELS.map((level) => (
-                <button
-                  key={level.value}
-                  type="button"
-                  onClick={() => setSkillLevel(level.value)}
-                  className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-all ${
-                    skillLevel === level.value
-                      ? 'border-primary bg-primary/10 text-primary'
-                      : 'border-[var(--color-border)] text-text-secondary hover:border-primary/30 hover:text-white'
-                  }`}
-                >
-                  {level.label}
-                </button>
-              ))}
-            </div>
-          </fieldset>
-
           <Button type="submit" className="w-full" size="lg" isLoading={isLoading}>
             Create account
           </Button>
         </form>
-
-        {/* Divider */}
-        <div className="relative my-6">
-          <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-[var(--color-border)]" />
-          </div>
-          <div className="relative flex justify-center text-xs">
-            <span className="bg-[var(--color-bg)] px-2 text-text-muted">or continue with</span>
-          </div>
-        </div>
-
-        {/* Google OAuth */}
-        <Button
-          variant="secondary"
-          className="w-full"
-          size="lg"
-          onClick={() => signIn('google', { callbackUrl: '/' })}
-        >
-          <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" />
-            <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-            <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
-            <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
-          </svg>
-          Continue with Google
-        </Button>
 
         {/* Sign in link */}
         <p className="mt-8 text-center text-sm text-text-secondary">

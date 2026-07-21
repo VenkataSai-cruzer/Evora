@@ -43,4 +43,13 @@ export async function authRoutes(app: FastifyInstance) {
     preHandler: [requireAuth],
     handler: controller.session.bind(controller),
   });
+
+  /**
+   * Returns a CSRF token for the current session.
+   * The client needs this because the session cookie is HttpOnly (not readable from JS).
+   */
+  app.get('/csrf', {
+    preHandler: [requireAuth],
+    handler: controller.csrf.bind(controller),
+  });
 }

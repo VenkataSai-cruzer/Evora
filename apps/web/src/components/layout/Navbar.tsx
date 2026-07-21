@@ -1,8 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useSession, signOut } from 'next-auth/react';
 import { useState, useEffect, useCallback } from 'react';
+import { useAuth } from '@/lib/auth-provider';
 import { Button } from '@/components/ui/Button';
 
 const NAV_LINKS = [
@@ -12,7 +12,7 @@ const NAV_LINKS = [
 ];
 
 export function Navbar() {
-  const { data: session, status } = useSession();
+  const { user, loading, signOut } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
 
@@ -68,9 +68,9 @@ export function Navbar() {
 
         {/* Desktop right section */}
         <div className="hidden items-center gap-3 md:flex">
-          {status === 'loading' ? (
+          {loading ? (
             <div className="h-8 w-20 animate-pulse rounded-lg bg-surface-elevated" />
-          ) : session ? (
+          ) : user ? (
             <div className="flex items-center gap-3">
               <Link
                 href="/tickets"
@@ -87,7 +87,7 @@ export function Navbar() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => signOut({ callbackUrl: '/' })}
+                onClick={() => signOut()}
               >
                 Sign out
               </Button>
@@ -142,7 +142,7 @@ export function Navbar() {
               </Link>
             ))}
             <hr className="my-2 border-[var(--color-border)]" />
-            {session ? (
+            {user ? (
               <>
                 <Link
                   href="/dashboard"
@@ -152,7 +152,7 @@ export function Navbar() {
                   Dashboard
                 </Link>
                 <button
-                  onClick={() => signOut({ callbackUrl: '/' })}
+                  onClick={() => signOut()}
                   className="rounded-lg px-3 py-2.5 text-left text-sm font-medium text-text-secondary transition-colors hover:bg-surface-hover"
                 >
                   Sign out

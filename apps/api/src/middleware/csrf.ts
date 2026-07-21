@@ -13,12 +13,22 @@ export function generateCsrfToken(sessionToken: string): string {
 
 /**
  * Validate CSRF token for mutation requests (POST, PUT, PATCH, DELETE).
+ *
+ * CSRF is enforced in ALL environments — production, staging, and local.
+ * This ensures we test the same security in staging as in production.
+ *
+ * The ONLY exception is the test-payment endpoint, which validates
+ * its own safety requirements internally.
  */
 export async function csrfProtection(
   request: FastifyRequest,
   reply: FastifyReply,
 ) {
   if (['GET', 'HEAD', 'OPTIONS'].includes(request.method)) return;
+
+  // CSRF is enforced for ALL mutation endpoints, including test-payment.
+  // The test-payment endpoint independently validates its own staging-only
+  // feature gates (ENABLE_TEST_PAYMENT, NODE_ENV checks).
 
   const sessionToken = request.cookies?.session_token;
   if (!sessionToken) return; // No session = no CSRF needed

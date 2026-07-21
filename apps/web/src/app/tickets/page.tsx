@@ -1,12 +1,12 @@
-import { getServerSession } from 'next-auth';
+export const dynamic = 'force-dynamic';
+
 import { redirect } from 'next/navigation';
-import { authOptions } from '@/lib/auth';
-import { prisma } from '@/lib/prisma';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Badge } from '@/components/ui/Badge';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { formatDate } from '@/lib/prisma-types';
+import { formatDate } from '@/lib/dates';
+import { getSession, listMyTickets } from '@/lib/api-client';
 
 export const metadata: Metadata = {
   title: 'My Tickets',
@@ -21,82 +21,20 @@ const TICKET_STATUS_STYLES: Record<string, { variant: 'success' | 'warning' | 'e
 };
 
 export default async function MyTicketsPage() {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) {
+  const session = await getSession();
+  if (!session) {
     redirect('/auth/login?callbackUrl=/tickets');
   }
 
-  const userId = session.user.id;
+  const allTickets = await listMyTickets();
 
-  const [upcomingTickets, pastTickets, orders] = await Promise.all([
-    prisma.ticket.findMany({
-      where: {
-        userId,
-        event: { startAt: { gte: new Date() } },
-        status: { in: ['CONFIRMED'] },
-      },
-      orderBy: { event: { startAt: 'asc' } },
-      select: {
-        id: true,
-        ticketNumber: true,
-        status: true,
-        createdAt: true,
-        event: {
-          select: {
-            id: true,
-            title: true,
-            slug: true,
-            startAt: true,
-            venueName: true,
-            venueAddress: true,
-            posterObjectKey: true,
-          },
-        },
-        ticketType: { select: { name: true, price: true } },
-        order: { select: { id: true, orderNumber: true, status: true } },
-      },
-    }),
-    prisma.ticket.findMany({
-      where: {
-        userId,
-        OR: [
-          { event: { startAt: { lt: new Date() } } },
-          { status: { in: ['CHECKED_IN', 'CANCELLED', 'EXPIRED'] } },
-        ],
-      },
-      orderBy: { event: { startAt: 'desc' } },
-      take: 20,
-      select: {
-        id: true,
-        ticketNumber: true,
-        status: true,
-        event: {
-          select: {
-            id: true,
-            title: true,
-            slug: true,
-            startAt: true,
-            venueName: true,
-          },
-        },
-        ticketType: { select: { name: true } },
-      },
-    }),
-    prisma.order.findMany({
-      where: { userId },
-      orderBy: { createdAt: 'desc' },
-      take: 10,
-      select: {
-        id: true,
-        orderNumber: true,
-        status: true,
-        total: true,
-        createdAt: true,
-        event: { select: { title: true, slug: true } },
-        _count: { select: { attendees: true, tickets: true } },
-      },
-    }),
-  ]);
+  const now = new Date();
+  const upcomingTickets = allTickets.filter(
+    (t) => new Date(t.event.startAt) >= now && t.status === 'CONFIRMED'
+  );
+  const pastTickets = allTickets.filter(
+    (t) => new Date(t.event.startAt) < now || ['CHECKED_IN', 'CANCELLED', 'EXPIRED'].includes(t.status)
+  );
 
   const hasNoData = upcomingTickets.length === 0 && pastTickets.length === 0;
 
@@ -192,25 +130,6 @@ export default async function MyTicketsPage() {
                 </div>
               );
             })}
-          </div>
-        </section>
-      )}
-
-      {orders.length > 0 && (
-        <section>
-          <h2 className="text-lg font-semibold text-white mb-4">Orders</h2>
-          <div className="space-y-2">
-            {orders.map((order) => (
-              <div key={order.id} className="flex items-center justify-between rounded-lg border border-[var(--color-border)] bg-surface p-3">
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm text-white">{order.event.title}</p>
-                  <p className="text-xs text-text-muted">
-                    {order.orderNumber} &bull; {order._count.tickets} {order._count.tickets === 1 ? 'ticket' : 'tickets'}
-                  </p>
-                </div>
-                <Badge variant="outline" size="sm">{order.status}</Badge>
-              </div>
-            ))}
           </div>
         </section>
       )}

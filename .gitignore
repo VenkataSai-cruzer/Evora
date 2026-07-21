@@ -9,6 +9,8 @@ out/
 dist/
 build/
 .turbo/
+.open-next/
+.wrangler/
 
 # Environment
 .env
@@ -20,7 +22,6 @@ build/
 # Database
 prisma/dev.db
 prisma/dev.db-journal
-prisma/migrations/
 
 # Testing
 coverage/

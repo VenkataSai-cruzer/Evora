@@ -1,11 +1,12 @@
-import { prisma } from '@/lib/prisma';
+export const dynamic = 'force-dynamic';
+
 import type { Metadata } from 'next';
-import type { Prisma } from '@prisma/client';
 import Link from 'next/link';
 import { Badge } from '@/components/ui/Badge';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { EventsFilter } from './EventsFilter';
-import { formatDate } from '@/lib/prisma-types';
+import { formatDate } from '@/lib/dates';
+import { listPublicEvents } from '@/lib/api-client';
 
 export const metadata: Metadata = {
   title: 'Events',
@@ -25,56 +26,15 @@ export default async function EventsPage({ searchParams }: EventsPageProps) {
   const page = Math.max(1, typeof searchParams.page === 'string' ? parseInt(searchParams.page, 10) : 1);
   const limit = 12;
 
-  const where: Prisma.EventWhereInput = {
-    status: 'PUBLISHED',
-    startAt: { gte: new Date() },
-  };
-
-  if (search) {
-    where.OR = [
-      { title: { contains: search } },
-      { description: { contains: search } },
-      { venueName: { contains: search } },
-    ];
-  }
-
-  const orderBy: Prisma.EventOrderByWithRelationInput = sort === 'title'
-    ? { title: 'asc' }
-    : { startAt: 'asc' };
-
-  const skip = (page - 1) * limit;
-
-  const [events, total] = await Promise.all([
-    prisma.event.findMany({
-      where,
-      orderBy,
-      skip,
-      take: limit,
-      select: {
-        id: true,
-        title: true,
-        slug: true,
-        posterObjectKey: true,
-        startAt: true,
-        venueName: true,
-        totalCapacity: true,
-        ticketTypes: {
-          select: { id: true, name: true, price: true },
-        },
-        _count: {
-          select: {
-            tickets: {
-              where: { status: { in: ['CONFIRMED', 'CHECKED_IN'] } },
-            },
-          },
-        },
-      },
-    }),
-    prisma.event.count({ where }),
-  ]);
+  const { events, total } = await listPublicEvents({
+    search: search || undefined,
+    sort: sort !== 'date' ? sort : undefined,
+    page,
+    limit,
+    upcoming: true,
+  });
 
   const totalPages = Math.ceil(total / limit);
-  const parsedEvents = events;
 
   return (
     <div className="page-container py-12">
@@ -96,10 +56,10 @@ export default async function EventsPage({ searchParams }: EventsPageProps) {
         skillLabels={{}}
       />
 
-      {parsedEvents.length > 0 ? (
+      {events.length > 0 ? (
         <>
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {parsedEvents.map((event) => {
+            {events.map((event) => {
               const spotsLeft = event.totalCapacity - event._count.tickets;
               const fillPercent = event.totalCapacity > 0
                 ? Math.round((event._count.tickets / event.totalCapacity) * 100)

@@ -15,10 +15,12 @@ export class TicketController {
       where,
       include: {
         event: {
-          select: { title: true, slug: true, startAt: true, venueName: true },
+          select: { id: true, title: true, slug: true, startAt: true, venueName: true, venueAddress: true, posterObjectKey: true },
         },
         ticketType: { select: { name: true, price: true } },
         checkIn: { select: { checkedInAt: true, result: true } },
+        order: { select: { id: true, orderNumber: true, status: true } },
+        attendee: { select: { attendeeName: true, attendeeEmail: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -37,17 +39,22 @@ export class TicketController {
             id: true,
             title: true,
             slug: true,
+            posterObjectKey: true,
             startAt: true,
             endAt: true,
             venueName: true,
             venueAddress: true,
             mapUrl: true,
+            status: true,
+            organizerId: true,
+            organizer: { select: { id: true, name: true } },
           },
         },
-        ticketType: { select: { name: true, price: true, currency: true } },
-        order: { select: { orderNumber: true } },
-        attendee: { select: { attendeeName: true, attendeeEmail: true } },
+        ticketType: { select: { id: true, name: true, price: true, currency: true } },
+        order: { select: { id: true, orderNumber: true, status: true, total: true } },
+        attendee: { select: { id: true, attendeeName: true, attendeeEmail: true } },
         checkIn: { select: { checkedInAt: true, result: true } },
+        user: { select: { id: true, name: true, email: true } },
       },
     });
 
@@ -55,8 +62,14 @@ export class TicketController {
       return reply.status(404).send({ error: 'Ticket not found' });
     }
 
-    // Only the ticket owner can view
-    if (ticket.userId !== request.user!.id) {
+    // Allow: ticket owner, event organizer, or admin
+    const userId = request.user!.id;
+    const userRole = request.user!.role;
+    const isOwner = ticket.userId === userId;
+    const isOrganizer = ticket.event.organizerId === userId;
+    const isAdmin = userRole === 'ADMIN';
+
+    if (!isOwner && !isOrganizer && !isAdmin) {
       return reply.status(403).send({ error: 'Access denied' });
     }
 

@@ -1,92 +1,37 @@
-import { prisma } from '@/lib/prisma';
+export const dynamic = 'force-dynamic';
+
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Badge } from '@/components/ui/Badge';
 import { RegistrationFlow } from './RegistrationFlow';
-import { formatDateLong } from '@/lib/prisma-types';
+import { formatDateLong } from '@/lib/dates';
+import { getEventBySlug } from '@/lib/api-client';
 
 interface EventPageProps {
   params: { slug: string };
 }
 
-export async function generateStaticParams() {
+export async function generateMetadata({ params }: EventPageProps): Promise<Metadata> {
   try {
-    const events = await prisma.event.findMany({
-      where: { status: 'PUBLISHED' },
-      select: { slug: true },
-    });
-    return events.map((e: { slug: string }) => ({ slug: e.slug }));
+    const event = await getEventBySlug(params.slug);
+    return {
+      title: event.title,
+      description: event.shortDescription?.slice(0, 160) || '',
+      openGraph: event.posterObjectKey ? { images: [event.posterObjectKey] } : undefined,
+    };
   } catch {
-    return [];
+    return { title: 'Event Not Found' };
   }
 }
 
-export async function generateMetadata({ params }: EventPageProps): Promise<Metadata> {
-  const event = await prisma.event.findUnique({
-    where: { slug: params.slug },
-    select: { title: true, description: true, posterObjectKey: true },
-  });
-
-  if (!event) return { title: 'Event Not Found' };
-
-  return {
-    title: event.title,
-    description: event.description?.slice(0, 160) || '',
-    openGraph: event.posterObjectKey ? { images: [event.posterObjectKey] } : undefined,
-  };
-}
-
 export default async function EventDetailPage({ params }: EventPageProps) {
-  const event = await prisma.event.findUnique({
-    where: { slug: params.slug },
-    select: {
-      id: true,
-      title: true,
-      slug: true,
-      shortDescription: true,
-      description: true,
-      posterObjectKey: true,
-      startAt: true,
-      endAt: true,
-      venueName: true,
-      venueAddress: true,
-      mapUrl: true,
-      totalCapacity: true,
-      status: true,
-      salesPaused: true,
-      bookingClosed: true,
-      contactEmail: true,
-      contactPhone: true,
-      terms: true,
-      organizerId: true,
-      organizer: {
-        select: { id: true, name: true },
-      },
-      ticketTypes: {
-        where: { active: true },
-        select: {
-          id: true,
-          name: true,
-          description: true,
-          price: true,
-          capacity: true,
-          soldCount: true,
-          maxPerOrder: true,
-        },
-      },
-      branding: { select: { venueLogoObjectKey: true, primaryLogoObjectKey: true } },
-      faqs: { where: { isPublished: true }, orderBy: { sortOrder: 'asc' } },
-      performers: { where: { isPublished: true }, orderBy: { sortOrder: 'asc' } },
-      _count: {
-        select: {
-          tickets: {
-            where: { status: { in: ['CONFIRMED', 'CHECKED_IN'] } },
-          },
-        },
-      },
-    },
-  });
+  let event;
+  try {
+    event = await getEventBySlug(params.slug);
+  } catch {
+    notFound();
+  }
 
   if (!event || event.status !== 'PUBLISHED') {
     notFound();
@@ -169,18 +114,20 @@ export default async function EventDetailPage({ params }: EventPageProps) {
             </div>
           </div>
 
-          <section>
-            <h2 className="text-lg font-semibold text-white">About this event</h2>
-            <div className="mt-2 text-sm leading-relaxed text-text-secondary whitespace-pre-line">
-              {event.description}
-            </div>
-          </section>
+          {event.description && (
+            <section>
+              <h2 className="text-lg font-semibold text-white">About this event</h2>
+              <div className="mt-2 text-sm leading-relaxed text-text-secondary whitespace-pre-line">
+                {event.description}
+              </div>
+            </section>
+          )}
 
-          {event.performers.length > 0 && (
+          {event.performers && event.performers.length > 0 && (
             <section>
               <h2 className="text-lg font-semibold text-white">Performers</h2>
               <div className="mt-3 space-y-3">
-                {event.performers.map((performer) => (
+                {event.performers.map((performer: { id: string; name: string; instrument: string | null }) => (
                   <div key={performer.id} className="flex items-center gap-3">
                     <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-sm font-medium text-primary">
                       {performer.name.charAt(0)}
@@ -197,11 +144,11 @@ export default async function EventDetailPage({ params }: EventPageProps) {
             </section>
           )}
 
-          {event.faqs.length > 0 && (
+          {event.faqs && event.faqs.length > 0 && (
             <section>
               <h2 className="text-lg font-semibold text-white">FAQs</h2>
               <div className="mt-3 space-y-3">
-                {event.faqs.map((faq) => (
+                {event.faqs.map((faq: { id: string; question: string; answer: string }) => (
                   <div key={faq.id} className="rounded-lg border border-[var(--color-border)] bg-surface p-4">
                     <p className="text-sm font-medium text-white">{faq.question}</p>
                     <p className="mt-1 text-xs text-text-secondary">{faq.answer}</p>

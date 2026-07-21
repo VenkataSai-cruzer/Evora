@@ -31,8 +31,6 @@ export function TicketPassClient({
 
         // Generate verification URL from ticket number
         const origin = window.location.origin;
-        const payload = JSON.stringify({ tn: ticketNumber, ts: Date.now() });
-        const encoded = btoa(unescape(encodeURIComponent(payload)));
         const verifyUrl = `${origin}/tickets/${ticketNumber}`;
 
         const url = await QRCode.toDataURL(verifyUrl, {

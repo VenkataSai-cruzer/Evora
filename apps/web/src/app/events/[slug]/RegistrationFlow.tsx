@@ -2,9 +2,11 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useSession } from 'next-auth/react';
 import { Button } from '@/components/ui/Button';
+import { useAuth } from '@/lib/auth-provider';
 import { Input } from '@/components/ui/Input';
+import { createOrder } from '@/lib/api-client';
+
 
 interface TicketTypeInfo {
   id: string;
@@ -41,13 +43,16 @@ export function RegistrationFlow({
   ticketTypes,
   contactEmail,
 }: RegistrationFlowProps) {
-  const { data: session, status } = useSession();
+  const isTestEnvironment =
+    process.env.NEXT_PUBLIC_APP_ENV === 'staging' ||
+    process.env.NEXT_PUBLIC_ENABLE_TEST_PAYMENT === 'true';
+  const { user: authUser, loading: authLoading } = useAuth();
   const router = useRouter();
 
   const [step, setStep] = useState<'select' | 'form' | 'confirm' | 'done'>('select');
   const [selectedTicketTypeId, setSelectedTicketTypeId] = useState(ticketTypes[0]?.id || '');
   const [attendees, setAttendees] = useState<AttendeeField[]>([
-    { id: 1, name: session?.user?.name || '', email: session?.user?.email || '' },
+    { id: 1, name: authUser?.name || '', email: authUser?.email || '' },
   ]);
   const [error, setError] = useState('');
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -55,12 +60,12 @@ export function RegistrationFlow({
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [utrNumber, setUtrNumber] = useState('');
   const [utrError, setUtrError] = useState('');
-  const [orderResult, setOrderResult] = useState<{ orderNumber: string; status: string; message?: string } | null>(null);
+  const [orderResult, setOrderResult] = useState<{ id: string; orderNumber: string; status: string; message?: string } | null>(null);
 
   const selectedType = ticketTypes.find((t) => t.id === selectedTicketTypeId);
   const isPaid = selectedType ? selectedType.price > 0 : false;
 
-  if (status === 'loading') {
+  if (authLoading) {
     return (
       <div className="animate-pulse space-y-3">
         <div className="h-8 w-24 rounded bg-surface-elevated" />
@@ -69,7 +74,7 @@ export function RegistrationFlow({
     );
   }
 
-  if (!session) {
+  if (!authUser) {
     return (
       <div className="space-y-4">
         <Button className="w-full" size="lg" onClick={() => router.push(`/auth/login?callbackUrl=/events/${eventSlug}`)}>
@@ -91,13 +96,12 @@ export function RegistrationFlow({
 
   function handleSelectTicketType(typeId: string) {
     setSelectedTicketTypeId(typeId);
-    const type = ticketTypes.find((t) => t.id === typeId);
     const count = 1;
     setAttendees(
       Array.from({ length: count }, (_, i) => ({
         id: i + 1,
-        name: i === 0 ? session?.user?.name || '' : '',
-        email: i === 0 ? session?.user?.email || '' : '',
+        name: i === 0 ? authUser?.name || '' : '',
+        email: i === 0 ? authUser?.email || '' : '',
       }))
     );
     setStep('form');
@@ -136,50 +140,29 @@ export function RegistrationFlow({
     setIsSubmitting(true);
 
     try {
-      const body: Record<string, unknown> = {
+      const result = await createOrder({
         eventId,
         ticketTypeId: selectedTicketTypeId,
         attendees: attendees.map((a) => ({
           name: a.name,
-          email: a.email || session?.user?.email,
+          email: a.email || authUser?.email || undefined,
         })),
-      };
-
-      if (isPaid) {
-        body.utrNumber = utrNumber.replace(/\s/g, '');
-      }
-
-      const res = await fetch('/api/tickets', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        utrNumber: isPaid ? utrNumber.replace(/\s/g, '') : undefined,
       });
 
-      const data = await res.json();
-
-      if (!res.ok) {
-        if (data.fieldErrors) {
-          const errs: Record<string, string> = {};
-          for (const [k, msgs] of Object.entries(data.fieldErrors)) {
-            errs[k] = (msgs as string[])[0];
-          }
-          setFieldErrors(errs);
-        } else {
-          setError(data.error || 'Registration failed');
-        }
-        setIsSubmitting(false);
-        return;
-      }
-
       setOrderResult({
-        orderNumber: data.order.orderNumber,
-        status: data.order.status,
-        message: data.message,
+        id: result.order.id,
+        orderNumber: result.order.orderNumber,
+        status: result.order.status,
       });
       setStep('done');
       router.refresh();
-    } catch {
-      setError('An unexpected error occurred');
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        setError(err.message || 'Registration failed');
+      } else {
+        setError('An unexpected error occurred');
+      }
       setIsSubmitting(false);
     }
   }
@@ -197,6 +180,34 @@ export function RegistrationFlow({
           <p className="mt-1 text-sm text-success/80">{orderResult.message}</p>
         )}
         <p className="mt-2 text-xs text-success/60">Order: {orderResult.orderNumber}</p>
+        {isTestEnvironment && orderResult.status === 'PENDING_PAYMENT' && (
+          <div className="mt-4 space-y-2">
+            <div className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/20 px-3 py-1">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+              <span className="text-[10px] font-medium text-amber-500">TEST MODE — No money will be charged</span>
+            </div>
+            <button
+              onClick={async () => {
+                setIsSubmitting(true);
+                try {
+                  const { testPayment } = await import('@/lib/api-client');
+                  const result = await testPayment(orderResult.id);
+                  if (result.status === 'SUCCEEDED') {
+                    setOrderResult({ ...orderResult, status: 'CONFIRMED' });
+                    router.refresh();
+                  }
+                } catch (err: unknown) {
+                  setError(err instanceof Error ? err.message : 'Test payment failed');
+                }
+                setIsSubmitting(false);
+              }}
+              disabled={isSubmitting}
+              className="w-full rounded-lg bg-amber-500 px-4 py-2.5 text-sm font-medium text-black transition-all hover:bg-amber-400 disabled:opacity-50"
+            >
+              {isSubmitting ? 'Processing...' : 'Complete Test Payment'}
+            </button>
+          </div>
+        )}
         <div className="mt-4 flex flex-col gap-2">
           <Button size="sm" onClick={() => router.push('/tickets')}>
             View my tickets

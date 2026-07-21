@@ -1,41 +1,25 @@
-import { getServerSession } from 'next-auth';
+export const dynamic = 'force-dynamic';
+
 import { redirect } from 'next/navigation';
-import { authOptions } from '@/lib/auth';
-import { prisma } from '@/lib/prisma';
-import { Badge } from '@/components/ui/Badge';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { getSession, listContactRequests } from '@/lib/api-client';
 
 interface ContactRequestsPageProps {
   searchParams: { [key: string]: string | string[] | undefined };
 }
 
 export default async function ContactRequestsPage({ searchParams }: ContactRequestsPageProps) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) redirect('/auth/login?callbackUrl=/dashboard/contact-requests');
-  if (session.user.role !== 'ADMIN') redirect('/');
+  const session = await getSession();
+  if (!session) redirect('/auth/login?callbackUrl=/dashboard/contact-requests');
+  if (session.role !== 'ADMIN') redirect('/');
 
   const statusFilter = typeof searchParams.status === 'string' ? searchParams.status : '';
   const search = typeof searchParams.q === 'string' ? searchParams.q : '';
 
-  const where: Record<string, unknown> = {};
-  if (statusFilter === 'read') where.isRead = true;
-  if (statusFilter === 'unread') where.isRead = false;
-  if (search) {
-    where.OR = [
-      { name: { contains: search } },
-      { email: { contains: search } },
-      { subject: { contains: search } },
-    ];
-  }
-
-  const messages = await prisma.contactMessage.findMany({
-    where: where as any,
-    orderBy: { createdAt: 'desc' },
-    take: 50,
+  const { messages, total, unread } = await listContactRequests({
+    status: statusFilter || undefined,
+    q: search || undefined,
   });
-
-  const total = await prisma.contactMessage.count();
-  const unread = await prisma.contactMessage.count({ where: { isRead: false } });
 
   return (
     <div className="space-y-6">

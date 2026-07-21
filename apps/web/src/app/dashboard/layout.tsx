@@ -1,6 +1,5 @@
-import { getServerSession } from 'next-auth';
 import { redirect } from 'next/navigation';
-import { authOptions } from '@/lib/auth';
+import { getSession } from '@/lib/api-client';
 import { DashboardNav } from './DashboardNav';
 
 export const metadata = {
@@ -13,13 +12,13 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const session = await getServerSession(authOptions);
+  const session = await getSession();
 
-  if (!session?.user) {
+  if (!session) {
     redirect('/auth/login?callbackUrl=/dashboard');
   }
 
-  const role = session.user.role;
+  const role = session.role;
   const isOrganizerOrAdmin = role === 'ORGANIZER' || role === 'ADMIN';
 
   if (!isOrganizerOrAdmin) {

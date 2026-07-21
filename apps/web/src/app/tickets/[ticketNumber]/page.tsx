@@ -1,11 +1,11 @@
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
-import { prisma } from '@/lib/prisma';
+export const dynamic = 'force-dynamic';
+
 import { notFound, redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Badge } from '@/components/ui/Badge';
-import { formatDate } from '@/lib/prisma-types';
+import { formatDate } from '@/lib/dates';
+import { getSession, getTicket } from '@/lib/api-client';
 import { TicketPassClient } from './TicketPassClient';
 
 interface PageProps {
@@ -25,51 +25,26 @@ const STATUS_STYLES: Record<string, { variant: 'success' | 'warning' | 'error' |
 };
 
 export default async function TicketDetailPage({ params }: PageProps) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) {
+  const session = await getSession();
+  if (!session) {
     redirect(`/auth/login?callbackUrl=/tickets/${params.ticketNumber}`);
   }
 
-  const ticket = await prisma.ticket.findUnique({
-    where: { ticketNumber: params.ticketNumber },
-    include: {
-      event: {
-        select: {
-          id: true,
-          title: true,
-          slug: true,
-          posterObjectKey: true,
-          startAt: true,
-          venueName: true,
-          venueAddress: true,
-          status: true,
-          organizerId: true,
-          organizer: { select: { id: true, name: true } },
-        },
-      },
-      order: {
-        select: { id: true, orderNumber: true, status: true, total: true },
-      },
-      attendee: {
-        select: { id: true, attendeeName: true, attendeeEmail: true },
-      },
-      ticketType: {
-        select: { id: true, name: true, price: true },
-      },
-      user: {
-        select: { id: true, name: true, email: true },
-      },
-    },
-  });
+  let ticket;
+  try {
+    ticket = await getTicket(params.ticketNumber);
+  } catch {
+    notFound();
+  }
 
   if (!ticket) {
     notFound();
   }
 
-  const isPurchaser = ticket.userId === session.user.id;
-  const isOrganizer = ticket.event.organizerId === session.user.id;
-  const isAdmin = session.user.role === 'ADMIN';
-  const isAttendee = ticket.attendee?.attendeeEmail === session.user.email;
+  const isPurchaser = ticket.userId === session.id;
+  const isOrganizer = ticket.event.organizerId === session.id;
+  const isAdmin = session.role === 'ADMIN';
+  const isAttendee = ticket.attendee?.attendeeEmail === session.email;
 
   if (!isPurchaser && !isOrganizer && !isAdmin && !isAttendee) {
     notFound();
@@ -78,7 +53,7 @@ export default async function TicketDetailPage({ params }: PageProps) {
   const statusStyle = STATUS_STYLES[ticket.status] || { variant: 'default' as const, label: ticket.status };
   const canViewQR = (ticket.status === 'CONFIRMED' || ticket.status === 'CHECKED_IN')
     && (isPurchaser || isOrganizer || isAdmin);
-  const displayPrice = ticket.ticketType.price === 0 ? 'Free' : `₹${(ticket.ticketType.price / 100).toFixed(0)}`;
+  const displayPrice = ticket.ticketType?.price === 0 ? 'Free' : `₹${((ticket.ticketType?.price || 0) / 100).toFixed(0)}`;
 
   return (
     <div className="min-h-screen py-8 px-4">
@@ -122,7 +97,7 @@ export default async function TicketDetailPage({ params }: PageProps) {
               </div>
               <div className="rounded-xl bg-surface/50 p-3">
                 <p className="text-xs text-text-muted">Type</p>
-                <p className="mt-0.5 text-sm font-medium text-white">{ticket.ticketType.name}</p>
+                <p className="mt-0.5 text-sm font-medium text-white">{ticket.ticketType?.name}</p>
               </div>
             </div>
 
@@ -146,7 +121,7 @@ export default async function TicketDetailPage({ params }: PageProps) {
 
             <div className="rounded-xl bg-surface/50 p-3">
               <p className="text-xs text-text-muted">Organized by</p>
-              <p className="mt-0.5 text-sm font-medium text-white">{ticket.event.organizer.name}</p>
+              <p className="mt-0.5 text-sm font-medium text-white">{ticket.event.organizer?.name || 'Unknown'}</p>
             </div>
 
             {canViewQR && (
@@ -156,32 +131,17 @@ export default async function TicketDetailPage({ params }: PageProps) {
                 eventTitle={ticket.event.title}
                 eventDate={formatDate(ticket.event.startAt)}
                 venueName={ticket.event.venueName}
-                ticketTypeName={ticket.ticketType.name}
+                ticketTypeName={ticket.ticketType?.name || ''}
               />
             )}
 
             <div className="flex gap-2">
-              <Link
-                href={`/api/tickets/${ticket.ticketNumber}/download?format=html`}
-                className="flex-1 rounded-lg bg-primary px-4 py-2.5 text-center text-sm font-medium text-white transition-all hover:bg-primary-hover"
+              <span
+                className="flex-1 rounded-lg bg-primary/30 px-4 py-2.5 text-center text-sm font-medium text-primary/50 cursor-not-allowed"
+                title="Ticket file generation is not available in staging yet"
               >
                 Download Pass
-              </Link>
-              {isPurchaser && (
-                <form method="POST" action={`/api/tickets/${ticket.ticketNumber}/cancel`}>
-                  <button
-                    type="submit"
-                    className="rounded-lg border border-error/30 px-4 py-2.5 text-sm font-medium text-error transition-all hover:bg-error/10"
-                    onClick={(e) => {
-                      if (!confirm('Are you sure you want to cancel this ticket?')) {
-                        e.preventDefault();
-                      }
-                    }}
-                  >
-                    Cancel
-                  </button>
-                </form>
-              )}
+              </span>
             </div>
           </div>
         </div>

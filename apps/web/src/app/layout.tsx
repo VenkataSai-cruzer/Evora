@@ -4,6 +4,7 @@ import '@/styles/globals.css';
 import { Providers } from '@/providers';
 import { AppShell } from '@/components/layout/AppShell';
 import { OfflineBanner } from '@/components/ui/OfflineBanner';
+import { StagingBanner } from '@/components/StagingBanner';
 
 const inter = Inter({
   subsets: ['latin'],
@@ -28,6 +29,7 @@ export default function RootLayout({
     <html lang="en" className={`dark ${inter.variable}`}>
       <body className="min-h-screen bg-[var(--color-bg)] font-sans antialiased">
         <Providers>
+          <StagingBanner />
           <AppShell>{children}</AppShell>
           <OfflineBanner />
         </Providers>

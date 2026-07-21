@@ -44,6 +44,13 @@ export class EventController {
             soldCount: true,
           },
         },
+        _count: {
+          select: {
+            tickets: {
+              where: { status: { in: ['CONFIRMED', 'CHECKED_IN'] } },
+            },
+          },
+        },
       },
     });
 
@@ -68,6 +75,24 @@ export class EventController {
         branding: true,
         partners: { orderBy: { displayOrder: 'asc' } },
         templates: { where: { active: true }, take: 1 },
+        organizer: {
+          select: { id: true, name: true },
+        },
+        faqs: {
+          where: { isPublished: true },
+          orderBy: { sortOrder: 'asc' },
+        },
+        performers: {
+          where: { isPublished: true },
+          orderBy: { sortOrder: 'asc' },
+        },
+        _count: {
+          select: {
+            tickets: {
+              where: { status: { in: ['CONFIRMED', 'CHECKED_IN'] } },
+            },
+          },
+        },
       },
     });
 

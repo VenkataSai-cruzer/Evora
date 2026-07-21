@@ -1,57 +1,27 @@
-import { getServerSession } from 'next-auth';
+export const dynamic = 'force-dynamic';
+
 import { redirect } from 'next/navigation';
-import { authOptions } from '@/lib/auth';
-import { prisma } from '@/lib/prisma';
 import Link from 'next/link';
-import type { Prisma } from '@prisma/client';
-import { formatDate } from '@/lib/prisma-types';
+import { formatDate } from '@/lib/dates';
+import { getSession, listAdminEvents } from '@/lib/api-client';
 
 interface EventsPageProps {
   searchParams: { [key: string]: string | string[] | undefined };
 }
 
 export default async function OrganizerEventsPage({ searchParams }: EventsPageProps) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) redirect('/auth/login?callbackUrl=/dashboard/events');
+  const session = await getSession();
+  if (!session) redirect('/auth/login?callbackUrl=/dashboard/events');
 
   const statusFilter = typeof searchParams.status === 'string' ? searchParams.status : '';
   const page = Math.max(1, typeof searchParams.page === 'string' ? parseInt(searchParams.page, 10) : 1);
   const limit = 20;
 
-  const where: Prisma.EventWhereInput = {
-    organizerId: session.user.id,
-  };
-
-  if (statusFilter) {
-    where.status = statusFilter;
-  }
-
-  const skip = (page - 1) * limit;
-
-  const [events, total] = await Promise.all([
-    prisma.event.findMany({
-      where,
-      orderBy: { updatedAt: 'desc' },
-      skip,
-      take: limit,
-      select: {
-        id: true,
-        title: true,
-        slug: true,
-        startAt: true,
-        venueName: true,
-        status: true,
-        createdAt: true,
-        _count: {
-          select: {
-            tickets: true,
-            orders: true,
-          },
-        },
-      },
-    }),
-    prisma.event.count({ where }),
-  ]);
+  const { events, total } = await listAdminEvents({
+    status: statusFilter || undefined,
+    page,
+    limit,
+  });
 
   const totalPages = Math.ceil(total / limit);
 
@@ -59,9 +29,6 @@ export default async function OrganizerEventsPage({ searchParams }: EventsPagePr
     { label: 'All', value: '', count: total },
     { label: 'Draft', value: 'DRAFT' },
     { label: 'Published', value: 'PUBLISHED' },
-    { label: 'Sales Open', value: 'SALES_OPEN' },
-    { label: 'Sales Paused', value: 'SALES_PAUSED' },
-    { label: 'Sold Out', value: 'SOLD_OUT' },
     { label: 'Completed', value: 'COMPLETED' },
     { label: 'Cancelled', value: 'CANCELLED' },
   ];
@@ -95,6 +62,7 @@ export default async function OrganizerEventsPage({ searchParams }: EventsPagePr
             }`}
           >
             {tab.label}
+            {tab.count !== undefined && ` (${tab.count})`}
           </Link>
         ))}
       </div>
@@ -126,7 +94,6 @@ export default async function OrganizerEventsPage({ searchParams }: EventsPagePr
                 </p>
               </div>
               <div className="flex items-center gap-2 ml-4">
-                <span className={`text-xs ${event.status === 'PUBLISHED' || event.status === 'SALES_OPEN' ? 'text-success' : 'text-text-muted'}`}>{event.status}</span>
                 <svg className="h-4 w-4 text-text-muted" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
                 </svg>
@@ -168,10 +135,10 @@ export default async function OrganizerEventsPage({ searchParams }: EventsPagePr
               <Link
                 key={pageNum}
                 href={`/dashboard/events?page=${pageNum}${statusFilter ? `&status=${statusFilter}` : ''}`}
-                className={`rounded-lg border px-3 py-1.5 text-sm ${
+                className={`rounded-lg border px-3 py-2 text-sm transition-colors ${
                   pageNum === page
                     ? 'border-primary bg-primary/10 text-primary'
-                    : 'border-[var(--color-border)] text-text-secondary hover:bg-surface-hover'
+                    : 'border-[var(--color-border)] text-text-secondary hover:bg-surface-hover hover:text-white'
                 }`}
               >
                 {pageNum}
