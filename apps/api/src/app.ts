@@ -17,13 +17,14 @@ import { uploadRoutes } from './modules/uploads/upload.routes.js';
 import { templateRoutes } from './modules/templates/template.routes.js';
 import { ticketTypeRoutes } from './modules/ticket-types/ticket-type.routes.js';
 import { userRoutes } from './modules/users/user.routes.js';
+import { testPaymentRoutes } from './modules/payments/payment.test.routes.js';
 
 export async function buildApp() {
   const app = Fastify({
     logger: {
       level: process.env.LOG_LEVEL || 'info',
       transport:
-        process.env.NODE_ENV !== 'production'
+        process.env.NODE_ENV === 'development'
           ? { target: 'pino-pretty', options: { colorize: true } }
           : undefined,
     },
@@ -71,6 +72,9 @@ export async function buildApp() {
   await app.register(ticketTypeRoutes, { prefix: '/api/v1/ticket-types' });
   await app.register(userRoutes, { prefix: '/api/v1/users' });
   await app.register(adminRoutes, { prefix: '/api/v1/admin' });
+
+  // ── Test Payment (staging only) ─────────────────────
+  await app.register(testPaymentRoutes, { prefix: '/api/v1' });
 
   return app;
 }
