@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui/Button';
@@ -15,6 +15,14 @@ const loginSchema = z.object({
 });
 
 export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="flex min-h-[80vh] items-center justify-center"><p className="text-text-secondary">Loading...</p></div>}>
+      <LoginForm />
+    </Suspense>
+  );
+}
+
+function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get('callbackUrl') || '/';
