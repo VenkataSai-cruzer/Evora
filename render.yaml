@@ -20,7 +20,7 @@ services:
     name: seven-notes-api
     env: node
     region: singapore
-    # Free tier — no credit card required
+    plan: free
     rootDir: .     # Repository root — needed for prisma/ and packages/
 
     buildCommand: |
