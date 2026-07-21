@@ -10,6 +10,9 @@ export async function adminRoutes(app: FastifyInstance) {
   app.addHook('preHandler', requireAuth);
   app.addHook('preHandler', requireRole('ADMIN'));
 
+  // Seed staging data
+  app.post('/seed', controller.seed.bind(controller));
+
   // Events
   app.get('/events', controller.listEvents.bind(controller));
   app.post('/events', controller.createEvent.bind(controller));
