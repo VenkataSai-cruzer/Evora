@@ -5,14 +5,14 @@ import Link from 'next/link';
 import { Badge } from '@/components/ui/Badge';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { EventsFilter } from './EventsFilter';
-import { parseInstruments, formatTime, formatDate, SKILL_LABELS } from '@/lib/prisma-types';
+import { formatDate } from '@/lib/prisma-types';
 
 export const metadata: Metadata = {
   title: 'Events',
   description: 'Browse upcoming jamming sessions and live music events.',
 };
 
-const INSTRUMENTS = ['Guitar', 'Bass', 'Drums', 'Keys', 'Vocals', 'Saxophone', 'Trumpet', 'Violin', 'Percussion'];
+const INSTRUMENTS: string[] = [];
 
 interface EventsPageProps {
   searchParams: { [key: string]: string | string[] | undefined };
@@ -21,16 +21,13 @@ interface EventsPageProps {
 export default async function EventsPage({ searchParams }: EventsPageProps) {
   const search = typeof searchParams.search === 'string' ? searchParams.search : '';
   const instrument = typeof searchParams.instrument === 'string' ? searchParams.instrument : '';
-  const skillLevel = typeof searchParams.skillLevel === 'string' ? searchParams.skillLevel : '';
   const sort = typeof searchParams.sort === 'string' ? searchParams.sort : 'date';
   const page = Math.max(1, typeof searchParams.page === 'string' ? parseInt(searchParams.page, 10) : 1);
   const limit = 12;
 
-  // Build filters
   const where: Prisma.EventWhereInput = {
-    status: { in: ['PUBLISHED', 'SALES_OPEN'] },
-    visibility: 'PUBLIC',
-    startDate: { gte: new Date() },
+    status: 'PUBLISHED',
+    startAt: { gte: new Date() },
   };
 
   if (search) {
@@ -41,17 +38,9 @@ export default async function EventsPage({ searchParams }: EventsPageProps) {
     ];
   }
 
-  if (skillLevel) {
-    where.skillLevel = skillLevel;
-  }
-
-  if (instrument) {
-    where.instruments = { contains: instrument };
-  }
-
   const orderBy: Prisma.EventOrderByWithRelationInput = sort === 'title'
     ? { title: 'asc' }
-    : { startDate: 'asc' };
+    : { startAt: 'asc' };
 
   const skip = (page - 1) * limit;
 
@@ -65,15 +54,13 @@ export default async function EventsPage({ searchParams }: EventsPageProps) {
         id: true,
         title: true,
         slug: true,
-        coverImageUrl: true,
-        startDate: true,
-        startTime: true,
+        posterObjectKey: true,
+        startAt: true,
         venueName: true,
-        capacity: true,
-        ticketType: true,
-        priceAmount: true,
-        instruments: true,
-        skillLevel: true,
+        totalCapacity: true,
+        ticketTypes: {
+          select: { id: true, name: true, price: true },
+        },
         _count: {
           select: {
             tickets: {
@@ -87,16 +74,10 @@ export default async function EventsPage({ searchParams }: EventsPageProps) {
   ]);
 
   const totalPages = Math.ceil(total / limit);
-
-  // Parse instruments for display
-  const parsedEvents = events.map((event) => ({
-    ...event,
-    instrumentsList: parseInstruments(event.instruments),
-  }));
+  const parsedEvents = events;
 
   return (
     <div className="page-container py-12">
-      {/* Page header */}
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-white">Events</h1>
         <p className="mt-1 text-text-secondary">
@@ -106,25 +87,25 @@ export default async function EventsPage({ searchParams }: EventsPageProps) {
         </p>
       </div>
 
-      {/* Filters */}
       <EventsFilter
         currentSearch={search}
         currentInstrument={instrument}
-        currentSkill={skillLevel}
+        currentSkill=""
         currentSort={sort}
         instruments={INSTRUMENTS}
-        skillLabels={SKILL_LABELS}
+        skillLabels={{}}
       />
 
-      {/* Event grid */}
       {parsedEvents.length > 0 ? (
         <>
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {parsedEvents.map((event) => {
-              const spotsLeft = event.capacity - event._count.tickets;
-              const fillPercent = event.capacity > 0
-                ? Math.round((event._count.tickets / event.capacity) * 100)
+              const spotsLeft = event.totalCapacity - event._count.tickets;
+              const fillPercent = event.totalCapacity > 0
+                ? Math.round((event._count.tickets / event.totalCapacity) * 100)
                 : 0;
+              const isFree = event.ticketTypes.some((t) => t.price === 0);
+              const minPrice = Math.min(...event.ticketTypes.map((t) => t.price));
 
               return (
                 <Link
@@ -132,11 +113,10 @@ export default async function EventsPage({ searchParams }: EventsPageProps) {
                   href={`/events/${event.slug}`}
                   className="group rounded-xl border border-[var(--color-border)] bg-surface transition-all duration-200 hover:-translate-y-1 hover:shadow-lg hover:shadow-primary/5"
                 >
-                  {/* Cover image */}
                   <div className="relative aspect-video overflow-hidden rounded-t-xl bg-surface-elevated">
-                    {event.coverImageUrl ? (
+                    {event.posterObjectKey ? (
                       <img
-                        src={event.coverImageUrl}
+                        src={event.posterObjectKey}
                         alt={event.title}
                         className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
                       />
@@ -146,37 +126,18 @@ export default async function EventsPage({ searchParams }: EventsPageProps) {
                       </div>
                     )}
                   </div>
-
-                  {/* Content */}
                   <div className="p-4">
                     <h3 className="font-semibold text-white group-hover:text-primary transition-colors">
                       {event.title}
                     </h3>
                     <p className="mt-1 text-sm text-text-secondary">
-                      {event.venueName} • {formatDate(event.startDate)}
+                      {event.venueName} • {formatDate(event.startAt)}
                     </p>
 
-                    {/* Instrument tags */}
-                    {event.instrumentsList.length > 0 && (
-                      <div className="mt-3 flex flex-wrap gap-1.5">
-                        {event.instrumentsList.slice(0, 3).map((inst) => (
-                          <Badge key={inst} variant="outline" size="sm">
-                            {inst}
-                          </Badge>
-                        ))}
-                        {event.instrumentsList.length > 3 && (
-                          <Badge variant="outline" size="sm">
-                            +{event.instrumentsList.length - 3}
-                          </Badge>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Capacity bar */}
                     <div className="mt-3">
                       <div className="flex items-center justify-between text-xs text-text-muted">
                         <span>{spotsLeft > 0 ? `${spotsLeft} spots left` : 'Full'}</span>
-                        <span>{event._count.tickets}/{event.capacity}</span>
+                        <span>{event._count.tickets}/{event.totalCapacity}</span>
                       </div>
                       <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-surface-elevated">
                         <div
@@ -194,12 +155,10 @@ export default async function EventsPage({ searchParams }: EventsPageProps) {
                       </div>
                     </div>
 
-                    {/* Price/Free badge */}
                     <div className="mt-3 flex items-center justify-between">
-                      <Badge variant={event.ticketType === 'FREE' ? 'success' : 'primary'} size="sm">
-                        {event.ticketType === 'FREE' ? 'Free' : event.priceAmount ? `$${(event.priceAmount / 100).toFixed(2)}` : 'Free'}
+                      <Badge variant={isFree ? 'success' : 'primary'} size="sm">
+                        {isFree ? 'Free' : `₹${(minPrice / 100).toFixed(0)}`}
                       </Badge>
-                      <span className="text-xs text-text-muted">{formatTime(event.startTime)}</span>
                     </div>
                   </div>
                 </Link>
@@ -207,12 +166,11 @@ export default async function EventsPage({ searchParams }: EventsPageProps) {
             })}
           </div>
 
-          {/* Pagination */}
           {totalPages > 1 && (
             <div className="mt-12 flex items-center justify-center gap-2">
               {page > 1 && (
                 <Link
-                  href={`/events?page=${page - 1}${search ? `&search=${search}` : ''}${instrument ? `&instrument=${instrument}` : ''}${skillLevel ? `&skillLevel=${skillLevel}` : ''}${sort !== 'date' ? `&sort=${sort}` : ''}`}
+                  href={`/events?page=${page - 1}${search ? `&search=${search}` : ''}${sort !== 'date' ? `&sort=${sort}` : ''}`}
                   className="rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm text-text-secondary transition-colors hover:bg-surface-hover hover:text-white"
                 >
                   Previous
@@ -232,7 +190,7 @@ export default async function EventsPage({ searchParams }: EventsPageProps) {
                 return (
                   <Link
                     key={pageNum}
-                    href={`/events?page=${pageNum}${search ? `&search=${search}` : ''}${instrument ? `&instrument=${instrument}` : ''}${skillLevel ? `&skillLevel=${skillLevel}` : ''}${sort !== 'date' ? `&sort=${sort}` : ''}`}
+                    href={`/events?page=${pageNum}${search ? `&search=${search}` : ''}${sort !== 'date' ? `&sort=${sort}` : ''}`}
                     className={`rounded-lg border px-3 py-2 text-sm transition-colors ${
                       pageNum === page
                         ? 'border-primary bg-primary/10 text-primary'
@@ -245,7 +203,7 @@ export default async function EventsPage({ searchParams }: EventsPageProps) {
               })}
               {page < totalPages && (
                 <Link
-                  href={`/events?page=${page + 1}${search ? `&search=${search}` : ''}${instrument ? `&instrument=${instrument}` : ''}${skillLevel ? `&skillLevel=${skillLevel}` : ''}${sort !== 'date' ? `&sort=${sort}` : ''}`}
+                  href={`/events?page=${page + 1}${search ? `&search=${search}` : ''}${sort !== 'date' ? `&sort=${sort}` : ''}`}
                   className="rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm text-text-secondary transition-colors hover:bg-surface-hover hover:text-white"
                 >
                   Next
@@ -259,12 +217,12 @@ export default async function EventsPage({ searchParams }: EventsPageProps) {
           icon="🎵"
           title="No upcoming events"
           description={
-            search || instrument || skillLevel
+            search || instrument
               ? 'No events match your filters. Try adjusting your search criteria.'
               : 'There are no events scheduled yet. Check back later for new jamming sessions.'
           }
           actionHref={
-            search || instrument || skillLevel
+            search || instrument
               ? { label: 'Clear filters', href: '/events' }
               : undefined
           }

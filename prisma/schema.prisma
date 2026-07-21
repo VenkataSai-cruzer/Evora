@@ -16,20 +16,25 @@ datasource db {
 // ───────────────────────────────────────────────
 
 model User {
-  id              String   @id @default(uuid())
+  id              String    @id @default(uuid())
   name            String
-  email           String   @unique
+  email           String    @unique
   passwordHash    String?
-  role            String   @default("ATTENDEE")   // ATTENDEE | ADMIN | CHECKIN_STAFF
+  role            String    @default("ATTENDEE") // ATTENDEE | ADMIN | CHECKIN_STAFF
   emailVerifiedAt DateTime?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  orders    Order[]
-  tickets   Ticket[]
-  checkIns  CheckIn[]
-  sessions  Session[]
-  auditLogs AuditLog[]
+  orders              Order[]
+  tickets             Ticket[]
+  checkIns            CheckIn[]
+  sessions            Session[]
+  auditLogs           AuditLog[]
+  // Event organizer (events this user owns)
+  organizedEvents     Event[]
+  eventFaqAuthors     EventFAQ[]
+  scheduleItemAuthors EventScheduleItem[]
+  eventUpdateAuthors  EventUpdate[]
 
   @@index([role])
 }
@@ -53,31 +58,33 @@ model Session {
 // ───────────────────────────────────────────────
 
 model Event {
-  id               String   @id @default(uuid())
-  title            String
-  slug             String   @unique
-  shortDescription String?
-  description      String?
-  posterObjectKey  String?
-  status           String   @default("DRAFT")   // DRAFT | PUBLISHED | COMPLETED | CANCELLED
-  startAt          DateTime
-  endAt            DateTime?
-  venueName        String
-  venueAddress     String?
-  mapUrl           String?
-  timezone         String   @default("Asia/Kolkata")
-  totalCapacity    Int      @default(0)
-  salesStartAt     DateTime?
-  salesEndAt       DateTime?
-  salesPaused      Boolean  @default(false)
-  bookingClosed    Boolean  @default(false)
-  contactEmail     String?
-  contactPhone     String?
-  terms            String?
-  ticketNumberPrefix String @default("")   // e.g. "7N-2026-HYD-"
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  id                 String    @id @default(uuid())
+  title              String
+  slug               String    @unique
+  shortDescription   String?
+  description        String?
+  posterObjectKey    String?
+  status             String    @default("DRAFT") // DRAFT | PUBLISHED | COMPLETED | CANCELLED
+  startAt            DateTime
+  endAt              DateTime?
+  venueName          String
+  venueAddress       String?
+  mapUrl             String?
+  timezone           String    @default("Asia/Kolkata")
+  totalCapacity      Int       @default(0)
+  salesStartAt       DateTime?
+  salesEndAt         DateTime?
+  salesPaused        Boolean   @default(false)
+  bookingClosed      Boolean   @default(false)
+  contactEmail       String?
+  contactPhone       String?
+  terms              String?
+  ticketNumberPrefix String    @default("") // e.g. "7N-2026-HYD-"
+  organizerId        String // Who owns/created this event
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
+  organizer     User                @relation(fields: [organizerId], references: [id])
   ticketTypes   TicketType[]
   orders        Order[]
   tickets       Ticket[]
@@ -86,15 +93,21 @@ model Event {
   partners      EventPartner[]
   templates     TicketTemplate[]
   auditLogs     AuditLog[]
+  // Content modules
+  faqs          EventFAQ[]
+  performers    EventPerformer[]
+  scheduleItems EventScheduleItem[]
+  updates       EventUpdate[]
 
   @@index([slug])
   @@index([status])
   @@index([startAt])
+  @@index([organizerId])
 }
 
 model EventBranding {
-  id                     String @id @default(uuid())
-  eventId                String @unique
+  id                     String   @id @default(uuid())
+  eventId                String   @unique
   venueLogoObjectKey     String?
   primaryLogoObjectKey   String?
   footerArtworkObjectKey String?
@@ -106,12 +119,12 @@ model EventBranding {
 }
 
 model EventPartner {
-  id           String @id @default(uuid())
-  eventId      String
-  name         String
+  id            String  @id @default(uuid())
+  eventId       String
+  name          String
   logoObjectKey String?
-  displayOrder Int    @default(0)
-  partnerType  String @default("CONTENT_PARTNER")  // CONTENT_PARTNER | SPONSOR | VENUE
+  displayOrder  Int     @default(0)
+  partnerType   String  @default("CONTENT_PARTNER") // CONTENT_PARTNER | SPONSOR | VENUE
 
   event Event @relation(fields: [eventId], references: [id])
 
@@ -119,24 +132,116 @@ model EventPartner {
 }
 
 // ───────────────────────────────────────────────
+// EVENT CONTENT MODULES (restored for platform features)
+// ───────────────────────────────────────────────
+
+model EventFAQ {
+  id          String   @id @default(uuid())
+  eventId     String
+  authorId    String?
+  question    String
+  answer      String
+  sortOrder   Int      @default(0)
+  isPublished Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  event  Event @relation(fields: [eventId], references: [id])
+  author User? @relation(fields: [authorId], references: [id])
+
+  @@index([eventId, sortOrder])
+  @@index([eventId, isPublished])
+}
+
+model EventPerformer {
+  id          String   @id @default(uuid())
+  eventId     String
+  name        String
+  bio         String?
+  imageUrl    String?
+  instrument  String?
+  role        String   @default("PERFORMER")
+  sortOrder   Int      @default(0)
+  isPublished Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  event Event @relation(fields: [eventId], references: [id])
+
+  @@index([eventId, sortOrder])
+  @@index([eventId, isPublished])
+}
+
+model EventScheduleItem {
+  id          String   @id @default(uuid())
+  eventId     String
+  authorId    String?
+  title       String
+  description String?
+  startTime   String
+  endTime     String?
+  sortOrder   Int      @default(0)
+  isPublished Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  event  Event @relation(fields: [eventId], references: [id])
+  author User? @relation(fields: [authorId], references: [id])
+
+  @@index([eventId, sortOrder])
+}
+
+model EventUpdate {
+  id          String   @id @default(uuid())
+  eventId     String
+  authorId    String?
+  message     String
+  updateType  String   @default("INSTRUCTION")
+  visibility  String   @default("PUBLIC") // PUBLIC | ATTENDEES_ONLY
+  isPinned    Boolean  @default(false)
+  publishedAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  event  Event @relation(fields: [eventId], references: [id])
+  author User? @relation(fields: [authorId], references: [id])
+
+  @@index([eventId, publishedAt])
+  @@index([eventId, updateType])
+}
+
+model ContactMessage {
+  id        String   @id @default(uuid())
+  name      String
+  email     String
+  subject   String
+  message   String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([isRead])
+}
+
+// ───────────────────────────────────────────────
 // TICKET TYPES
 // ───────────────────────────────────────────────
 
 model TicketType {
-  id          String   @id @default(uuid())
+  id          String    @id @default(uuid())
   eventId     String
   name        String
   description String?
-  price       Int      @default(0)        // in cents (0 = free)
-  currency    String   @default("INR")
-  capacity    Int      @default(0)
-  soldCount   Int      @default(0)
-  maxPerOrder Int      @default(10)
+  price       Int       @default(0) // in cents (0 = free)
+  currency    String    @default("INR")
+  capacity    Int       @default(0)
+  soldCount   Int       @default(0)
+  maxPerOrder Int       @default(10)
   saleStartAt DateTime?
   saleEndAt   DateTime?
-  active      Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  active      Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   event     Event           @relation(fields: [eventId], references: [id])
   attendees OrderAttendee[]
@@ -151,21 +256,21 @@ model TicketType {
 // ───────────────────────────────────────────────
 
 model Order {
-  id                String    @id @default(uuid())
-  orderNumber       String    @unique
-  eventId           String
-  userId            String
-  status            String    @default("PENDING_PAYMENT")  // PENDING_PAYMENT | CONFIRMED | FAILED | EXPIRED | CANCELLED
-  subtotal          Int       @default(0)
-  fees              Int       @default(0)
-  total             Int       @default(0)
-  currency          String    @default("INR")
-  paymentProvider   String?   // stripe | utr | test
-  paymentReference  String?
-  expiresAt         DateTime?
-  paidAt            DateTime?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  id               String    @id @default(uuid())
+  orderNumber      String    @unique
+  eventId          String
+  userId           String
+  status           String    @default("PENDING_PAYMENT") // PENDING_PAYMENT | CONFIRMED | FAILED | EXPIRED | CANCELLED
+  subtotal         Int       @default(0)
+  fees             Int       @default(0)
+  total            Int       @default(0)
+  currency         String    @default("INR")
+  paymentProvider  String? // stripe | utr | test
+  paymentReference String?
+  expiresAt        DateTime?
+  paidAt           DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   event     Event           @relation(fields: [eventId], references: [id])
   user      User            @relation(fields: [userId], references: [id])
@@ -190,7 +295,7 @@ model OrderAttendee {
 
   order      Order      @relation(fields: [orderId], references: [id])
   ticketType TicketType @relation(fields: [ticketTypeId], references: [id])
-  ticket     Ticket?    // null until ticket generated after payment
+  ticket     Ticket? // null until ticket generated after payment
 
   @@index([orderId])
   @@index([attendeeEmail])
@@ -205,9 +310,9 @@ model Payment {
   orderId           String
   amount            Int
   currency          String    @default("INR")
-  method            String    // stripe | utr | test | free
-  status            String    @default("PENDING")  // PENDING | SUCCEEDED | FAILED | REFUNDED
-  utrNumber         String?   @unique  // 12-digit UPI UTR/Ref number
+  method            String // stripe | utr | test | free
+  status            String    @default("PENDING") // PENDING | SUCCEEDED | FAILED | REFUNDED
+  utrNumber         String?   @unique // 12-digit UPI UTR/Ref number
   providerPaymentId String?
   verifiedAt        DateTime?
   createdAt         DateTime  @default(now())
@@ -225,22 +330,22 @@ model Payment {
 // ───────────────────────────────────────────────
 
 model Ticket {
-  id               String    @id @default(uuid())
-  ticketNumber     String    @unique
-  eventId          String
-  userId           String
-  orderId          String?
-  orderAttendeeId  String?   @unique
-  ticketTypeId     String
-  status           String    @default("CONFIRMED")  // CONFIRMED | CHECKED_IN | CANCELLED | EXPIRED
-  qrTokenHash      String?   @unique
-  templateVersion  Int       @default(1)
-  pngObjectKey     String?
-  pdfObjectKey     String?
-  renderingStatus  String    @default("PENDING")    // PENDING | COMPLETED | FAILED
-  checkedInAt      DateTime?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  id              String    @id @default(uuid())
+  ticketNumber    String    @unique
+  eventId         String
+  userId          String
+  orderId         String?
+  orderAttendeeId String?   @unique
+  ticketTypeId    String
+  status          String    @default("CONFIRMED") // CONFIRMED | CHECKED_IN | CANCELLED | EXPIRED
+  qrTokenHash     String?   @unique
+  templateVersion Int       @default(1)
+  pngObjectKey    String?
+  pdfObjectKey    String?
+  renderingStatus String    @default("PENDING") // PENDING | COMPLETED | FAILED
+  checkedInAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   event      Event          @relation(fields: [eventId], references: [id])
   user       User           @relation(fields: [userId], references: [id])
@@ -261,19 +366,19 @@ model Ticket {
 // ───────────────────────────────────────────────
 
 model TicketTemplate {
-  id              String   @id @default(uuid())
+  id              String    @id @default(uuid())
   eventId         String
-  version         Int      @default(1)
+  version         Int       @default(1)
   sourceObjectKey String
   width           Int
   height          Int
-  outputFormat    String   @default("PNG")
-  active          Boolean  @default(false)
+  outputFormat    String    @default("PNG")
+  active          Boolean   @default(false)
   lockedAt        DateTime?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  event  Event                @relation(fields: [eventId], references: [id])
+  event  Event                 @relation(fields: [eventId], references: [id])
   fields TicketTemplateField[]
 
   @@unique([eventId, version])
@@ -283,7 +388,7 @@ model TicketTemplate {
 model TicketTemplateField {
   id              String  @id @default(uuid())
   templateId      String
-  fieldName       String  // EVENT_NAME | EVENT_DATE | EVENT_TIME | VENUE_NAME | VENUE_ADDRESS | ATTENDEE_NAME | TICKET_TYPE | QUANTITY | TICKET_NUMBER | ORDER_NUMBER | QR_CODE | BARCODE
+  fieldName       String // EVENT_NAME | EVENT_DATE | EVENT_TIME | VENUE_NAME | VENUE_ADDRESS | ATTENDEE_NAME | TICKET_TYPE | QUANTITY | TICKET_NUMBER | ORDER_NUMBER | QR_CODE | BARCODE
   x               Int
   y               Int
   width           Int
@@ -307,13 +412,13 @@ model TicketTemplateField {
 // ───────────────────────────────────────────────
 
 model CheckIn {
-  id           String   @id @default(uuid())
-  ticketId     String   @unique
-  eventId      String
-  scannerId    String
-  checkedInAt  DateTime @default(now())
-  deviceInfo   String?
-  result       String   @default("VALID")   // VALID | ALREADY_CHECKED_IN | INVALID | WRONG_EVENT | PAYMENT_NOT_CONFIRMED
+  id          String   @id @default(uuid())
+  ticketId    String   @unique
+  eventId     String
+  scannerId   String
+  checkedInAt DateTime @default(now())
+  deviceInfo  String?
+  result      String   @default("VALID") // VALID | ALREADY_CHECKED_IN | INVALID | WRONG_EVENT | PAYMENT_NOT_CONFIRMED
 
   ticket  Ticket @relation(fields: [ticketId], references: [id])
   event   Event  @relation(fields: [eventId], references: [id])
@@ -334,6 +439,8 @@ model AuditLog {
   action     String
   entityType String
   entityId   String
+  ipAddress  String?
+  userAgent  String?
   metadata   String   @default("{}")
   createdAt  DateTime @default(now())
 
@@ -351,10 +458,10 @@ model AuditLog {
 
 model PaymentWebhookEvent {
   id               String    @id @default(uuid())
-  provider         String    // stripe | utr | test
-  externalEventId  String    // Provider's unique event ID
+  provider         String // stripe | utr | test
+  externalEventId  String // Provider's unique event ID
   payloadHash      String?
-  processingStatus String    @default("PENDING")  // PENDING | PROCESSED | FAILED
+  processingStatus String    @default("PENDING") // PENDING | PROCESSED | FAILED
   processedAt      DateTime?
   createdAt        DateTime  @default(now())
 

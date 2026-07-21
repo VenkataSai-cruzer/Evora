@@ -10,31 +10,24 @@ const log = createLogger('api/dashboard/events/[id]');
 
 const updateEventSchema = z.object({
   title: z.string().min(2).max(200).optional(),
-  description: z.string().min(10).max(10000).optional(),
-  coverImageUrl: z.string().url().optional().nullable(),
-  eventLogoUrl: z.string().url().optional().nullable(),
-  edition: z.string().max(50).optional().nullable(),
-  startDate: z.string().optional(),
-  startTime: z.string().optional(),
-  endDate: z.string().optional().nullable(),
-  endTime: z.string().optional().nullable(),
+  shortDescription: z.string().max(300).optional().nullable(),
+  description: z.string().max(10000).optional().nullable(),
+  startAt: z.string().optional(),
+  endAt: z.string().optional().nullable(),
   venueName: z.string().min(2).max(200).optional(),
-  venueAddress: z.string().min(2).max(500).optional(),
-  venueLat: z.number().optional().nullable(),
-  venueLng: z.number().optional().nullable(),
-  capacity: z.number().int().min(1).max(100000).optional(),
-  ticketType: z.enum(['FREE', 'PAID']).optional(),
-  price: z.number().min(0).optional().nullable(),
-  instruments: z.string().optional(),
-  skillLevel: z.string().optional(),
-  visibility: z.enum(['PUBLIC', 'PRIVATE']).optional(),
-  status: z.enum(['DRAFT', 'PUBLISHED', 'SALES_OPEN', 'SALES_PAUSED', 'SALES_CLOSED', 'SOLD_OUT', 'COMPLETED', 'CANCELLED']).optional(),
-  featured: z.boolean().optional(),
-  entryGate: z.string().max(100).optional().nullable(),
-  entryInstructions: z.string().max(2000).optional().nullable(),
-  termsUrl: z.string().url().optional().nullable(),
-  upiId: z.string().max(50).optional().nullable(),
-  upiQrCodeUrl: z.string().url().optional().nullable(),
+  venueAddress: z.string().max(500).optional().nullable(),
+  mapUrl: z.string().optional().nullable(),
+  timezone: z.string().optional(),
+  totalCapacity: z.number().int().min(0).max(100000).optional(),
+  salesStartAt: z.string().optional().nullable(),
+  salesEndAt: z.string().optional().nullable(),
+  salesPaused: z.boolean().optional(),
+  bookingClosed: z.boolean().optional(),
+  contactEmail: z.string().email().optional().nullable(),
+  contactPhone: z.string().optional().nullable(),
+  terms: z.string().optional().nullable(),
+  status: z.enum(['DRAFT', 'PUBLISHED', 'COMPLETED', 'CANCELLED']).optional(),
+  posterObjectKey: z.string().optional().nullable(),
 });
 
 async function checkOwnership(eventId: string) {
@@ -79,16 +72,11 @@ export async function GET(
         faqs: { orderBy: { sortOrder: 'asc' }, where: { isPublished: true } },
         scheduleItems: { orderBy: { sortOrder: 'asc' } },
         updates: { orderBy: { publishedAt: 'desc' }, take: 20 },
-        journals: { orderBy: { createdAt: 'desc' }, take: 5 },
-        stories: true,
-        media: { orderBy: { sortOrder: 'asc' } },
-        externalLinks: true,
         _count: {
           select: {
             tickets: true,
             orders: true,
             checkIns: true,
-            appreciationMessages: true,
           },
         },
       },
@@ -122,32 +110,21 @@ export async function PATCH(
     const data = parsed.data;
     const updateData: Record<string, unknown> = {};
 
-    if (data.title !== undefined) updateData.title = data.title;
+      if (data.title !== undefined) updateData.title = data.title;
+    if (data.shortDescription !== undefined) updateData.shortDescription = data.shortDescription;
     if (data.description !== undefined) updateData.description = data.description;
-    if (data.coverImageUrl !== undefined) updateData.coverImageUrl = data.coverImageUrl;
-    if (data.eventLogoUrl !== undefined) updateData.eventLogoUrl = data.eventLogoUrl;
-    if (data.edition !== undefined) updateData.edition = data.edition;
-    if (data.startDate !== undefined) updateData.startDate = new Date(data.startDate);
-    if (data.startTime !== undefined) updateData.startTime = data.startTime;
-    if (data.endDate !== undefined) updateData.endDate = data.endDate ? new Date(data.endDate) : null;
-    if (data.endTime !== undefined) updateData.endTime = data.endTime;
+    if (data.startAt !== undefined) updateData.startAt = new Date(data.startAt);
+    if (data.endAt !== undefined) updateData.endAt = data.endAt ? new Date(data.endAt) : null;
     if (data.venueName !== undefined) updateData.venueName = data.venueName;
     if (data.venueAddress !== undefined) updateData.venueAddress = data.venueAddress;
-    if (data.venueLat !== undefined) updateData.venueLat = data.venueLat;
-    if (data.venueLng !== undefined) updateData.venueLng = data.venueLng;
-    if (data.capacity !== undefined) updateData.capacity = data.capacity;
-    if (data.ticketType !== undefined) updateData.ticketType = data.ticketType;
-    if (data.price !== undefined && data.price !== null) updateData.priceAmount = Math.round(data.price * 100);
-    if (data.instruments !== undefined) updateData.instruments = data.instruments;
-    if (data.skillLevel !== undefined) updateData.skillLevel = data.skillLevel;
-    if (data.visibility !== undefined) updateData.visibility = data.visibility;
+    if (data.mapUrl !== undefined) updateData.mapUrl = data.mapUrl;
+    if (data.totalCapacity !== undefined) updateData.totalCapacity = data.totalCapacity;
     if (data.status !== undefined) updateData.status = data.status;
-    if (data.featured !== undefined) updateData.featured = data.featured;
-    if (data.entryGate !== undefined) updateData.entryGate = data.entryGate;
-    if (data.entryInstructions !== undefined) updateData.entryInstructions = data.entryInstructions;
-    if (data.termsUrl !== undefined) updateData.termsUrl = data.termsUrl;
-    if (data.upiId !== undefined) updateData.upiId = data.upiId;
-    if (data.upiQrCodeUrl !== undefined) updateData.upiQrCodeUrl = data.upiQrCodeUrl;
+    if (data.contactEmail !== undefined) updateData.contactEmail = data.contactEmail;
+    if (data.contactPhone !== undefined) updateData.contactPhone = data.contactPhone;
+    if (data.terms !== undefined) updateData.terms = data.terms;
+    if (data.salesPaused !== undefined) updateData.salesPaused = data.salesPaused;
+    if (data.bookingClosed !== undefined) updateData.bookingClosed = data.bookingClosed;
 
     const event = await prisma.event.update({
       where: { id: params.id },
@@ -249,24 +226,19 @@ export async function POST(
       data: {
         title: `${original.title} (Copy)`,
         slug: newSlug,
+        shortDescription: original.shortDescription,
         description: original.description,
-        coverImageUrl: original.coverImageUrl,
+        posterObjectKey: original.posterObjectKey,
+        status: 'DRAFT',
+        startAt: original.startAt,
         venueName: original.venueName,
         venueAddress: original.venueAddress,
-        venueLat: original.venueLat,
-        venueLng: original.venueLng,
-        capacity: original.capacity,
-        ticketType: original.ticketType,
-        priceAmount: original.priceAmount,
-        instruments: original.instruments,
-        skillLevel: original.skillLevel,
-        visibility: original.visibility,
-        status: 'DRAFT',
+        mapUrl: original.mapUrl,
+        timezone: original.timezone,
+        totalCapacity: original.totalCapacity,
+        contactEmail: original.contactEmail,
+        terms: original.terms,
         organizerId: event.organizerId,
-        startDate: original.startDate,
-        startTime: original.startTime,
-        endDate: original.endDate,
-        endTime: original.endTime,
       },
       select: { id: true, title: true, slug: true, status: true },
     });

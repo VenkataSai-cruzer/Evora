@@ -6,7 +6,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Badge } from '@/components/ui/Badge';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { formatDate, formatTime } from '@/lib/prisma-types';
+import { formatDate } from '@/lib/prisma-types';
 
 export const metadata: Metadata = {
   title: 'My Tickets',
@@ -32,50 +32,39 @@ export default async function MyTicketsPage() {
     prisma.ticket.findMany({
       where: {
         userId,
-        event: { startDate: { gte: new Date() } },
+        event: { startAt: { gte: new Date() } },
         status: { in: ['CONFIRMED'] },
       },
-      orderBy: { event: { startDate: 'asc' } },
+      orderBy: { event: { startAt: 'asc' } },
       select: {
         id: true,
         ticketNumber: true,
         status: true,
-        type: true,
-        category: true,
-        purchasedAt: true,
+        createdAt: true,
         event: {
           select: {
             id: true,
             title: true,
             slug: true,
-            startDate: true,
-            startTime: true,
-            endDate: true,
-            endTime: true,
+            startAt: true,
             venueName: true,
             venueAddress: true,
-            coverImageUrl: true,
+            posterObjectKey: true,
           },
         },
-        order: {
-          select: {
-            id: true,
-            orderNumber: true,
-            bookingType: true,
-            attendeeCount: true,
-          },
-        },
+        ticketType: { select: { name: true, price: true } },
+        order: { select: { id: true, orderNumber: true, status: true } },
       },
     }),
     prisma.ticket.findMany({
       where: {
         userId,
         OR: [
-          { event: { startDate: { lt: new Date() } } },
+          { event: { startAt: { lt: new Date() } } },
           { status: { in: ['CHECKED_IN', 'CANCELLED', 'EXPIRED'] } },
         ],
       },
-      orderBy: { event: { startDate: 'desc' } },
+      orderBy: { event: { startAt: 'desc' } },
       take: 20,
       select: {
         id: true,
@@ -86,17 +75,11 @@ export default async function MyTicketsPage() {
             id: true,
             title: true,
             slug: true,
-            startDate: true,
-            startTime: true,
+            startAt: true,
             venueName: true,
           },
         },
-        order: {
-          select: {
-            bookingType: true,
-            attendeeCount: true,
-          },
-        },
+        ticketType: { select: { name: true } },
       },
     }),
     prisma.order.findMany({
@@ -106,16 +89,11 @@ export default async function MyTicketsPage() {
       select: {
         id: true,
         orderNumber: true,
-        bookingType: true,
-        attendeeCount: true,
         status: true,
+        total: true,
         createdAt: true,
-        event: {
-          select: {
-            title: true,
-            slug: true,
-          },
-        },
+        event: { select: { title: true, slug: true } },
+        _count: { select: { attendees: true, tickets: true } },
       },
     }),
   ]);
@@ -146,35 +124,31 @@ export default async function MyTicketsPage() {
         </p>
       </div>
 
-      {/* Upcoming */}
       {upcomingTickets.length > 0 && (
         <section className="mb-12">
           <h2 className="text-lg font-semibold text-white mb-4">Upcoming</h2>
           <div className="space-y-4">
             {upcomingTickets.map((ticket) => {
               const statusStyle = TICKET_STATUS_STYLES[ticket.status] || { variant: 'default' as const, label: ticket.status };
-
               return (
                 <Link
                   key={ticket.id}
                   href={`/tickets/${ticket.ticketNumber}`}
                   className="flex items-start gap-4 rounded-xl border border-[var(--color-border)] bg-surface p-4 transition-all hover:bg-surface-hover"
                 >
-                  {/* Event cover thumbnail */}
                   <div className="hidden h-20 w-20 flex-shrink-0 overflow-hidden rounded-lg bg-surface-elevated sm:block">
-                    {ticket.event.coverImageUrl ? (
-                      <img src={ticket.event.coverImageUrl} alt="" className="h-full w-full object-cover" />
+                    {ticket.event.posterObjectKey ? (
+                      <img src={ticket.event.posterObjectKey} alt="" className="h-full w-full object-cover" />
                     ) : (
                       <div className="flex h-full items-center justify-center text-2xl opacity-30">🎵</div>
                     )}
                   </div>
-
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between gap-2">
                       <div>
                         <h3 className="font-semibold text-white">{ticket.event.title}</h3>
                         <p className="mt-0.5 text-sm text-text-secondary">
-                          {formatDate(ticket.event.startDate)} &bull; {formatTime(ticket.event.startTime)}
+                          {formatDate(ticket.event.startAt)}
                         </p>
                         <p className="text-xs text-text-muted">{ticket.event.venueName}</p>
                       </div>
@@ -182,8 +156,8 @@ export default async function MyTicketsPage() {
                     </div>
                     <div className="mt-2 flex items-center gap-3 text-xs text-text-muted">
                       <span>Ticket: {ticket.ticketNumber}</span>
-                      {ticket.order && (
-                        <span>{ticket.order.bookingType} booking</span>
+                      {ticket.ticketType && (
+                        <span>{ticket.ticketType.name}</span>
                       )}
                     </div>
                     <div className="mt-1.5 inline-flex items-center gap-1 text-xs text-primary hover:text-primary-hover">
@@ -200,7 +174,6 @@ export default async function MyTicketsPage() {
         </section>
       )}
 
-      {/* Past tickets */}
       {pastTickets.length > 0 && (
         <section className="mb-12">
           <h2 className="text-lg font-semibold text-white mb-4">Past</h2>
@@ -208,14 +181,11 @@ export default async function MyTicketsPage() {
             {pastTickets.map((ticket) => {
               const statusStyle = TICKET_STATUS_STYLES[ticket.status] || { variant: 'default' as const, label: ticket.status };
               return (
-                <div
-                  key={ticket.id}
-                  className="flex items-center justify-between rounded-lg border border-[var(--color-border)] bg-surface p-3"
-                >
+                <div key={ticket.id} className="flex items-center justify-between rounded-lg border border-[var(--color-border)] bg-surface p-3">
                   <div className="flex-1 min-w-0">
                     <p className="text-sm text-white">{ticket.event.title}</p>
                     <p className="text-xs text-text-muted">
-                      {formatDate(ticket.event.startDate)} &bull; {ticket.event.venueName}
+                      {formatDate(ticket.event.startAt)} &bull; {ticket.event.venueName}
                     </p>
                   </div>
                   <Badge variant={statusStyle.variant} size="sm">{statusStyle.label}</Badge>
@@ -226,20 +196,16 @@ export default async function MyTicketsPage() {
         </section>
       )}
 
-      {/* Recent orders */}
       {orders.length > 0 && (
         <section>
           <h2 className="text-lg font-semibold text-white mb-4">Orders</h2>
           <div className="space-y-2">
             {orders.map((order) => (
-              <div
-                key={order.id}
-                className="flex items-center justify-between rounded-lg border border-[var(--color-border)] bg-surface p-3"
-              >
+              <div key={order.id} className="flex items-center justify-between rounded-lg border border-[var(--color-border)] bg-surface p-3">
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-white">{order.event.title}</p>
                   <p className="text-xs text-text-muted">
-                    {order.orderNumber} &bull; {order.bookingType} &bull; {order.attendeeCount} {order.attendeeCount === 1 ? 'attendee' : 'attendees'}
+                    {order.orderNumber} &bull; {order._count.tickets} {order._count.tickets === 1 ? 'ticket' : 'tickets'}
                   </p>
                 </div>
                 <Badge variant="outline" size="sm">{order.status}</Badge>

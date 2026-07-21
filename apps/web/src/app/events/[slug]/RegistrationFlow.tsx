@@ -6,32 +6,31 @@ import { useSession } from 'next-auth/react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 
+interface TicketTypeInfo {
+  id: string;
+  name: string;
+  price: number;
+  capacity: number;
+  soldCount: number;
+  maxPerOrder: number;
+}
+
 interface RegistrationFlowProps {
   eventId: string;
   eventSlug: string;
   eventTitle: string;
   eventDate: string;
-  eventTime: string;
   venueName: string;
   venueAddress: string;
-  coverImageUrl: string | null;
-  ticketType: string;
-  capacity: number;
+  posterObjectKey?: string | null;
   spotsLeft: number;
-  upiId?: string | null;
-  upiQrCodeUrl?: string | null;
+  ticketTypes: TicketTypeInfo[];
+  contactEmail?: string | null;
 }
-
-const BOOKING_TYPES = [
-  { value: 'SOLO', label: 'Solo', icon: '1', desc: 'Just me' },
-  { value: 'DUO', label: 'Duo', icon: '2', desc: 'Me + 1' },
-  { value: 'TRIO', label: 'Trio', icon: '3', desc: 'Me + 2' },
-  { value: 'GROUP', label: 'Group', icon: '4+', desc: 'Bring the crew' },
-];
 
 interface AttendeeField {
   id: number;
-  fullName: string;
+  name: string;
   email: string;
 }
 
@@ -39,17 +38,16 @@ export function RegistrationFlow({
   eventId,
   eventSlug,
   spotsLeft,
-  ticketType,
-  upiId,
-  upiQrCodeUrl,
+  ticketTypes,
+  contactEmail,
 }: RegistrationFlowProps) {
   const { data: session, status } = useSession();
   const router = useRouter();
 
   const [step, setStep] = useState<'select' | 'form' | 'confirm' | 'done'>('select');
-  const [bookingType, setBookingType] = useState('SOLO');
+  const [selectedTicketTypeId, setSelectedTicketTypeId] = useState(ticketTypes[0]?.id || '');
   const [attendees, setAttendees] = useState<AttendeeField[]>([
-    { id: 1, fullName: session?.user?.name || '', email: session?.user?.email || '' },
+    { id: 1, name: session?.user?.name || '', email: session?.user?.email || '' },
   ]);
   const [error, setError] = useState('');
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -57,9 +55,10 @@ export function RegistrationFlow({
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [utrNumber, setUtrNumber] = useState('');
   const [utrError, setUtrError] = useState('');
-  const [orderResult, setOrderResult] = useState<{ orderNumber: string; bookingType: string; attendeeCount: number; isUtrPayment?: boolean; message?: string } | null>(null);
+  const [orderResult, setOrderResult] = useState<{ orderNumber: string; status: string; message?: string } | null>(null);
 
-  // For paid events, require UTR number
+  const selectedType = ticketTypes.find((t) => t.id === selectedTicketTypeId);
+  const isPaid = selectedType ? selectedType.price > 0 : false;
 
   if (status === 'loading') {
     return (
@@ -90,13 +89,14 @@ export function RegistrationFlow({
     );
   }
 
-  function handleSelectType(type: string) {
-    setBookingType(type);
-    const count = type === 'SOLO' ? 1 : type === 'DUO' ? 2 : type === 'TRIO' ? 3 : 4;
+  function handleSelectTicketType(typeId: string) {
+    setSelectedTicketTypeId(typeId);
+    const type = ticketTypes.find((t) => t.id === typeId);
+    const count = 1;
     setAttendees(
       Array.from({ length: count }, (_, i) => ({
         id: i + 1,
-        fullName: i === 0 ? session?.user?.name || '' : '',
+        name: i === 0 ? session?.user?.name || '' : '',
         email: i === 0 ? session?.user?.email || '' : '',
       }))
     );
@@ -105,7 +105,7 @@ export function RegistrationFlow({
     setFieldErrors({});
   }
 
-  function updateAttendee(id: number, field: 'fullName' | 'email', value: string) {
+  function updateAttendee(id: number, field: 'name' | 'email', value: string) {
     setAttendees((prev) => prev.map((a) => (a.id === id ? { ...a, [field]: value } : a)));
   }
 
@@ -114,10 +114,9 @@ export function RegistrationFlow({
     setFieldErrors({});
     setUtrError('');
 
-    // Validate all attendees have names
     const errors: Record<string, string> = {};
     attendees.forEach((a, i) => {
-      if (!a.fullName || a.fullName.length < 2) {
+      if (!a.name || a.name.length < 2) {
         errors[`attendee_${a.id}_name`] = `Attendee ${i + 1} name is required`;
       }
     });
@@ -126,8 +125,7 @@ export function RegistrationFlow({
       return;
     }
 
-    // Validate UTR for paid events
-    if (ticketType === 'PAID') {
+    if (isPaid) {
       const cleaned = utrNumber.replace(/\s/g, '');
       if (!cleaned || !/^\d{12}$/.test(cleaned)) {
         setUtrError('Please enter a valid 12-digit UTR/Ref number from your UPI payment.');
@@ -140,15 +138,14 @@ export function RegistrationFlow({
     try {
       const body: Record<string, unknown> = {
         eventId,
-        bookingType,
+        ticketTypeId: selectedTicketTypeId,
         attendees: attendees.map((a) => ({
-          fullName: a.fullName,
+          name: a.name,
           email: a.email || session?.user?.email,
         })),
       };
 
-      // Include UTR number for paid events
-      if (ticketType === 'PAID') {
+      if (isPaid) {
         body.utrNumber = utrNumber.replace(/\s/g, '');
       }
 
@@ -176,9 +173,7 @@ export function RegistrationFlow({
 
       setOrderResult({
         orderNumber: data.order.orderNumber,
-        bookingType: data.order.bookingType,
-        attendeeCount: data.order.attendeeCount,
-        isUtrPayment: data.isUtrPayment,
+        status: data.order.status,
         message: data.message,
       });
       setStep('done');
@@ -190,32 +185,6 @@ export function RegistrationFlow({
   }
 
   if (step === 'done' && orderResult) {
-    if (orderResult.isUtrPayment) {
-      return (
-        <div className="rounded-xl border border-warning/30 bg-warning-bg p-6 text-center">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-warning/20">
-            <svg className="h-7 w-7 text-warning" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6l4 2" />
-            </svg>
-          </div>
-          <h3 className="mt-4 text-lg font-semibold text-warning">Payment Pending Verification</h3>
-          <p className="mt-1 text-sm text-warning/80">
-            {orderResult.bookingType === 'SOLO' ? 'Solo' : orderResult.bookingType === 'DUO' ? 'Duo' : orderResult.bookingType === 'TRIO' ? 'Trio' : 'Group'} booking submitted
-          </p>
-          <p className="mt-2 text-xs text-warning/60">Order: {orderResult.orderNumber}</p>
-          <div className="mt-3 rounded-lg bg-warning/10 p-3 text-xs text-warning/80">
-            <p>Your UTR number has been submitted for verification. The organizer will verify your payment and confirm your tickets.</p>
-            <p className="mt-1.5 font-medium">Please keep a screenshot of your payment as proof.</p>
-          </div>
-          <div className="mt-4 flex flex-col gap-2">
-            <Button variant="secondary" size="sm" onClick={() => router.push('/events')}>
-              Browse more events
-            </Button>
-          </div>
-        </div>
-      );
-    }
-
     return (
       <div className="rounded-xl border border-success/30 bg-success-bg p-6 text-center">
         <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-success/20">
@@ -223,10 +192,10 @@ export function RegistrationFlow({
             <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
           </svg>
         </div>
-        <h3 className="mt-4 text-lg font-semibold text-success">You&apos;re in!</h3>
-        <p className="mt-1 text-sm text-success/80">
-          {orderResult.bookingType === 'SOLO' ? 'Solo' : orderResult.bookingType === 'DUO' ? 'Duo' : orderResult.bookingType === 'TRIO' ? 'Trio' : 'Group'} booking confirmed
-        </p>
+        <h3 className="mt-4 text-lg font-semibold text-success">Registration submitted!</h3>
+        {orderResult.message && (
+          <p className="mt-1 text-sm text-success/80">{orderResult.message}</p>
+        )}
         <p className="mt-2 text-xs text-success/60">Order: {orderResult.orderNumber}</p>
         <div className="mt-4 flex flex-col gap-2">
           <Button size="sm" onClick={() => router.push('/tickets')}>
@@ -246,16 +215,16 @@ export function RegistrationFlow({
         <h3 className="text-sm font-semibold text-white">Confirm your booking</h3>
         <div className="rounded-lg border border-[var(--color-border)] bg-surface-elevated p-3">
           <p className="text-xs text-text-muted">
-            {bookingType} &bull; {attendees.length} {attendees.length === 1 ? 'attendee' : 'attendees'}
+            {attendees.length} {attendees.length === 1 ? 'attendee' : 'attendees'}
           </p>
           <div className="mt-2 space-y-1">
             {attendees.map((a, i) => (
               <p key={a.id} className="text-sm text-white">
-                {i + 1}. {a.fullName}
+                {i + 1}. {a.name}
               </p>
             ))}
           </div>
-          {utrNumber && ticketType === 'PAID' && (
+          {utrNumber && isPaid && (
             <div className="mt-3 rounded-lg border border-primary/20 bg-primary/5 p-2.5">
               <p className="text-xs text-text-muted">UTR/Ref Number</p>
               <p className="font-mono text-sm font-medium text-primary">{utrNumber}</p>
@@ -263,15 +232,14 @@ export function RegistrationFlow({
           )}
         </div>
 
-        {/* Terms and no-refund policy */}
         <div className="rounded-lg border border-[var(--color-border)] bg-surface p-3">
           <p className="text-xs font-medium text-white mb-2">Before you confirm:</p>
           <ul className="space-y-1.5 text-xs text-text-muted">
             <li>✓ Tickets are non-refundable and non-transferable once confirmed.</li>
             <li>✓ Entry is subject to venue rules and event terms.</li>
             <li>✓ Your details will be used for event entry only.</li>
-            {ticketType === 'PAID' && (
-              <li>✓ Your UTR number will be verified against the organizer&apos;s bank statement before tickets are confirmed.</li>
+            {isPaid && (
+              <li>✓ Your UTR number will be verified before tickets are confirmed.</li>
             )}
           </ul>
           <label className="mt-3 flex items-start gap-2 cursor-pointer">
@@ -292,7 +260,7 @@ export function RegistrationFlow({
         )}
         <div className="flex gap-2">
           <Button className="flex-1" size="lg" isLoading={isSubmitting} disabled={!acceptedTerms} onClick={handleSubmit}>
-            {ticketType === 'PAID' ? 'Submit for verification' : 'Confirm registration'}
+            {isPaid ? 'Submit for verification' : 'Confirm registration'}
           </Button>
           <Button variant="secondary" size="lg" onClick={() => setStep('form')}>
             Back
@@ -306,11 +274,9 @@ export function RegistrationFlow({
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-white">
-            {bookingType === 'SOLO' ? 'Your details' : `${bookingType} attendee details`}
-          </h3>
+          <h3 className="text-sm font-semibold text-white">Your details</h3>
           <button onClick={() => setStep('select')} className="text-xs text-text-muted hover:text-white transition-colors">
-            Change type
+            Change ticket type
           </button>
         </div>
 
@@ -321,55 +287,30 @@ export function RegistrationFlow({
               <Input
                 label="Full name"
                 placeholder="Enter name"
-                value={attendee.fullName}
-                onChange={(e) => updateAttendee(attendee.id, 'fullName', e.target.value)}
+                value={attendee.name}
+                onChange={(e) => updateAttendee(attendee.id, 'name', e.target.value)}
                 error={fieldErrors[`attendee_${attendee.id}_name`]}
               />
-              {i > 0 && (
-                <Input
-                  label="Email (optional)"
-                  type="email"
-                  placeholder="email@example.com"
-                  value={attendee.email}
-                  onChange={(e) => updateAttendee(attendee.id, 'email', e.target.value)}
-                />
-              )}
+              <Input
+                label="Email (optional)"
+                type="email"
+                placeholder="email@example.com"
+                value={attendee.email}
+                onChange={(e) => updateAttendee(attendee.id, 'email', e.target.value)}
+              />
             </div>
           ))}
 
-          {/* UTR Number input for paid events */}
-          {ticketType === 'PAID' && (
+          {isPaid && (
             <div className="rounded-lg border border-primary/20 bg-primary/5 p-4">
               <div className="mb-2 flex items-center gap-2">
                 <span className="text-lg">💳</span>
                 <p className="text-sm font-medium text-white">UPI Payment Verification</p>
               </div>
-
-              {/* UPI Payment Details */}
-              <div className="mb-4 flex flex-col items-center gap-3 rounded-lg bg-surface-elevated p-4">
-                {upiQrCodeUrl && (
-                  <img
-                    src={upiQrCodeUrl}
-                    alt="UPI QR Code"
-                    className="h-32 w-32 rounded-lg border border-[var(--color-border)] object-contain bg-white"
-                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                  />
-                )}
-                {upiId && (
-                  <div className="text-center">
-                    <p className="text-xs text-text-muted">Pay to UPI ID:</p>
-                    <p className="mt-0.5 font-mono text-sm font-bold text-primary">{upiId}</p>
-                  </div>
-                )}
-                {!upiId && !upiQrCodeUrl && (
-                  <p className="text-xs text-text-muted">
-                    Pay the ticket amount to the organizer&apos;s UPI ID (contact organizer for details).
-                  </p>
-                )}
-              </div>
-
               <p className="mb-3 text-xs text-text-muted">
-                After making the payment, enter the 12-digit UTR/Ref number from your payment confirmation below.
+                {contactEmail
+                  ? `Contact the organizer at ${contactEmail} for payment details.`
+                  : 'Contact the organizer for payment details.'}
               </p>
               <Input
                 label="UTR / Ref Number"
@@ -406,29 +347,34 @@ export function RegistrationFlow({
     );
   }
 
-  // Step: select booking type
+  // Step: select ticket type
   return (
     <div className="space-y-3">
-      <h3 className="text-sm font-semibold text-white">How many?</h3>
-      <div className="grid grid-cols-2 gap-2">
-        {BOOKING_TYPES.map((type) => {
-          const isAvailable = type.value === 'GROUP' ? spotsLeft >= 4 : spotsLeft >= parseInt(type.icon);
+      <h3 className="text-sm font-semibold text-white">Select ticket type</h3>
+      <div className="space-y-2">
+        {ticketTypes.map((type) => {
+          const available = type.capacity - type.soldCount;
+          const isAvailable = available > 0;
           return (
             <button
-              key={type.value}
-              onClick={() => isAvailable && handleSelectType(type.value)}
+              key={type.id}
+              onClick={() => isAvailable && handleSelectTicketType(type.id)}
               disabled={!isAvailable}
-              className={`rounded-lg border p-3 text-left transition-all ${
+              className={`w-full rounded-lg border p-3 text-left transition-all ${
                 !isAvailable
                   ? 'border-[var(--color-border)] opacity-40 cursor-not-allowed'
                   : 'border-[var(--color-border)] hover:border-primary/30 hover:bg-surface-hover'
               }`}
             >
-              <div className="text-lg font-bold text-white">
-                {type.value === 'GROUP' ? '4+' : type.icon}
+              <div className="flex items-center justify-between">
+                <div className="text-sm font-medium text-white">{type.name}</div>
+                <div className="text-sm font-bold text-white">
+                  {type.price === 0 ? 'Free' : `₹${(type.price / 100).toFixed(0)}`}
+                </div>
               </div>
-              <div className="text-sm font-medium text-white">{type.label}</div>
-              <div className="text-xs text-text-muted">{type.desc}</div>
+              <div className="mt-1 text-xs text-text-muted">
+                {isAvailable ? `${available} left` : 'Sold out'}
+              </div>
             </button>
           );
         })}

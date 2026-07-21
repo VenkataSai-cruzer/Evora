@@ -13,18 +13,14 @@ interface TicketType {
   id: string;
   name: string;
   description: string | null;
-  priceAmount: number;
+  price: number;
   currency: string;
-  quantity: number;
-  reservedQty: number;
-  soldQty: number;
-  saleStart: string | null;
-  saleEnd: string | null;
-  minPerBooking: number;
-  maxPerBooking: number;
-  bookingMode: string;
-  visibility: string;
-  status: string;
+  capacity: number;
+  soldCount: number;
+  saleStartAt: string | null;
+  saleEndAt: string | null;
+  maxPerOrder: number;
+  active: boolean;
 }
 
 interface ManageEventContentProps {
@@ -34,6 +30,12 @@ interface ManageEventContentProps {
 interface FormErrors {
   [key: string]: string;
 }
+
+const TICKET_FORM_DEFAULTS = {
+  name: '', description: '', price: '0', capacity: '50',
+  maxPerOrder: '10',
+  saleStartAt: '', saleEndAt: '', active: 'true',
+};
 
 export default function ManageEventContent({ params }: ManageEventContentProps) {
   const [activeTab, setActiveTab] = useState<'tickets' | 'schedule' | 'performers' | 'faqs' | 'updates'>('tickets');
@@ -47,11 +49,7 @@ export default function ManageEventContent({ params }: ManageEventContentProps) 
   const [ticketTypes, setTicketTypes] = useState<TicketType[]>([]);
   const [showTicketForm, setShowTicketForm] = useState(false);
   const [editingTicket, setEditingTicket] = useState<TicketType | null>(null);
-  const [ticketForm, setTicketForm] = useState({
-    name: '', description: '', price: '0', quantity: '50',
-    bookingMode: 'FLEXIBLE', minPerBooking: '1', maxPerBooking: '10',
-    saleStart: '', saleEnd: '', status: 'DRAFT',
-  });
+  const [ticketForm, setTicketForm] = useState({ ...TICKET_FORM_DEFAULTS });
 
   // Schedule
   const [scheduleItems, setScheduleItems] = useState<any[]>([]);
@@ -152,14 +150,12 @@ export default function ManageEventContent({ params }: ManageEventContentProps) 
     const payload = {
       name: ticketForm.name,
       description: ticketForm.description || null,
-      price: parseFloat(ticketForm.price) || 0, // API converts to cents
-      quantity: parseInt(ticketForm.quantity) || 0,
-      bookingMode: ticketForm.bookingMode,
-      minPerBooking: parseInt(ticketForm.minPerBooking) || 1,
-      maxPerBooking: parseInt(ticketForm.maxPerBooking) || 10,
-      saleStart: ticketForm.saleStart || null,
-      saleEnd: ticketForm.saleEnd || null,
-      status: ticketForm.status || 'DRAFT',
+      price: parseFloat(ticketForm.price) || 0,
+      capacity: parseInt(ticketForm.capacity) || 0,
+      maxPerOrder: parseInt(ticketForm.maxPerOrder) || 10,
+      saleStartAt: ticketForm.saleStartAt || null,
+      saleEndAt: ticketForm.saleEndAt || null,
+      active: ticketForm.active === 'true',
     };
     const res = await fetch(`/api/dashboard/events/${params.id}/ticket-types`, {
       method: 'POST',
@@ -168,7 +164,7 @@ export default function ManageEventContent({ params }: ManageEventContentProps) 
     });
     if (res.ok) {
       setShowTicketForm(false);
-      setTicketForm({ name: '', description: '', price: '0', quantity: '50', bookingMode: 'FLEXIBLE', minPerBooking: '1', maxPerBooking: '10', saleStart: '', saleEnd: '', status: 'DRAFT' });
+      setTicketForm({ ...TICKET_FORM_DEFAULTS });
       fetchTicketTypes();
     } else {
       const data = await res.json();
@@ -188,15 +184,13 @@ export default function ManageEventContent({ params }: ManageEventContentProps) 
     if (!editingTicket) return;
     const payload: Record<string, unknown> = {};
     if (ticketForm.name) payload.name = ticketForm.name;
-    if (ticketForm.price) payload.price = parseFloat(ticketForm.price); // API converts to cents
-    if (ticketForm.quantity) payload.quantity = parseInt(ticketForm.quantity);
-    if (ticketForm.minPerBooking) payload.minPerBooking = parseInt(ticketForm.minPerBooking);
-    if (ticketForm.maxPerBooking) payload.maxPerBooking = parseInt(ticketForm.maxPerBooking);
-    if (ticketForm.bookingMode) payload.bookingMode = ticketForm.bookingMode;
-    payload.status = ticketForm.status;
-    if (ticketForm.saleStart) payload.saleStart = ticketForm.saleStart;
-    if (ticketForm.saleEnd) payload.saleEnd = ticketForm.saleEnd;
+    if (ticketForm.price) payload.price = parseFloat(ticketForm.price);
+    if (ticketForm.capacity) payload.capacity = parseInt(ticketForm.capacity);
+    if (ticketForm.maxPerOrder) payload.maxPerOrder = parseInt(ticketForm.maxPerOrder);
+    payload.active = ticketForm.active === 'true';
     payload.description = ticketForm.description || null;
+    if (ticketForm.saleStartAt) payload.saleStartAt = ticketForm.saleStartAt;
+    if (ticketForm.saleEndAt) payload.saleEndAt = ticketForm.saleEndAt;
 
     const res = await fetch(`/api/dashboard/events/${params.id}/ticket-types/${editingTicket.id}`, {
       method: 'PATCH',
@@ -286,10 +280,9 @@ export default function ManageEventContent({ params }: ManageEventContentProps) 
     { id: 'tickets', label: '🎫 Tickets' },
     { id: 'schedule', label: '📋 Schedule' },
     { id: 'performers', label: '🎤 Performers' },
-    { id: 'faqs', label: '❓ FAQs' },        { id: 'updates', label: '📢 Live Updates' },
+    { id: 'faqs', label: '❓ FAQs' },
+    { id: 'updates', label: '📢 Live Updates' },
   ] as const;
-
-  // Add attendees tab if event is active or has tickets
 
   if (isLoading) {
     return (
@@ -303,52 +296,6 @@ export default function ManageEventContent({ params }: ManageEventContentProps) 
   if (error) {
     return <EmptyState icon="⚠️" title="Error" description={error} action={{ label: 'Try Again', onClick: () => window.location.reload() }} />;
   }
-
-  const TicketTypeForm = ({ onSubmit, isEditing }: { onSubmit: (_e: React.FormEvent) => Promise<void>; isEditing: boolean }) => (              <form onSubmit={(event) => { event.preventDefault(); onSubmit(event); }} className="space-y-4">
-      <h2 className="text-xl font-bold text-white">{isEditing ? 'Edit Ticket Type' : 'Create Ticket Type'}</h2>
-      {formErrors.name && <p className="text-xs text-red-400">{formErrors.name}</p>}
-      <Input label="Name" value={ticketForm.name} onChange={(e) => setTicketForm({ ...ticketForm, name: e.target.value })} required placeholder="General Admission" />
-      <Input label="Description (optional)" value={ticketForm.description} onChange={(e) => setTicketForm({ ...ticketForm, description: e.target.value })} placeholder="Early bird discount" />
-      <div className="grid grid-cols-2 gap-4">
-        <Input label="Price ($)" type="number" min="0" step="0.01" value={ticketForm.price} onChange={(e) => setTicketForm({ ...ticketForm, price: e.target.value })} required />
-        <Input label="Quantity" type="number" min="0" value={ticketForm.quantity} onChange={(e) => setTicketForm({ ...ticketForm, quantity: e.target.value })} required />
-      </div>
-      <div className="grid grid-cols-2 gap-4">
-        <Input label="Min per Booking" type="number" min="1" value={ticketForm.minPerBooking} onChange={(e) => setTicketForm({ ...ticketForm, minPerBooking: e.target.value })} />
-        <Input label="Max per Booking" type="number" min="1" value={ticketForm.maxPerBooking} onChange={(e) => setTicketForm({ ...ticketForm, maxPerBooking: e.target.value })} />
-      </div>
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-300 mb-1">Booking Mode</label>
-          <select className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm" value={ticketForm.bookingMode} onChange={(e) => setTicketForm({ ...ticketForm, bookingMode: e.target.value })}>
-            <option value="SOLO">Solo</option>
-            <option value="DUO">Duo</option>
-            <option value="TRIO">Trio</option>
-            <option value="GROUP">Group</option>
-            <option value="FLEXIBLE">Flexible</option>
-          </select>
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-300 mb-1">Status</label>
-          <select className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm" value={ticketForm.status} onChange={(e) => setTicketForm({ ...ticketForm, status: e.target.value })}>
-            <option value="DRAFT">Draft</option>
-            <option value="ACTIVE">Active</option>
-            <option value="PAUSED">Paused</option>
-            <option value="SOLD_OUT">Sold Out</option>
-            <option value="CLOSED">Closed</option>
-          </select>
-        </div>
-      </div>
-      <div className="grid grid-cols-2 gap-4">
-        <Input label="Sale Start (optional)" type="date" value={ticketForm.saleStart} onChange={(e) => setTicketForm({ ...ticketForm, saleStart: e.target.value })} />
-        <Input label="Sale End (optional)" type="date" value={ticketForm.saleEnd} onChange={(e) => setTicketForm({ ...ticketForm, saleEnd: e.target.value })} />
-      </div>
-      <div className="flex justify-end gap-3 pt-2">
-        <Button variant="secondary" onClick={() => { setShowTicketForm(false); setEditingTicket(null); }}>Cancel</Button>
-        <Button variant="primary" type="submit">{isEditing ? 'Update' : 'Create'}</Button>
-      </div>
-    </form>
-  );
 
   return (
     <div className="space-y-6">
@@ -402,16 +349,14 @@ export default function ManageEventContent({ params }: ManageEventContentProps) 
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
                         <h3 className="font-semibold text-white">{tt.name}</h3>
-                        <Badge variant={tt.status === 'ACTIVE' ? 'success' : tt.status === 'PAUSED' ? 'warning' : 'default'} size="sm">{tt.status}</Badge>
-                        <Badge variant="primary" size="sm">{tt.bookingMode}</Badge>
+                        <Badge variant={tt.active ? 'success' : 'default'} size="sm">{tt.active ? 'Active' : 'Inactive'}</Badge>
                       </div>
                       {tt.description && <p className="text-gray-400 text-sm mt-1">{tt.description}</p>}
                       <div className="flex gap-4 mt-2 text-sm text-gray-400">
-                        <span>💰 ${(tt.priceAmount / 100).toFixed(2)}</span>
-                        <span>📦 {tt.quantity} total</span>
-                        <span>✅ {tt.soldQty} sold</span>
-                        <span>⏳ {tt.reservedQty} reserved</span>
-                        <span>📅 {tt.saleStart ? new Date(tt.saleStart).toLocaleDateString() : 'No start'}</span>
+                        <span>💰 {(tt.price / 100).toFixed(2)} {tt.currency}</span>
+                        <span>📦 {tt.capacity} total</span>
+                        <span>✅ {tt.soldCount} sold</span>
+                        <span>📅 {tt.saleStartAt ? new Date(tt.saleStartAt).toLocaleDateString() : 'No start'}</span>
                       </div>
                     </div>
                     <div className="flex gap-2 ml-4">
@@ -419,12 +364,11 @@ export default function ManageEventContent({ params }: ManageEventContentProps) 
                         setEditingTicket(tt);
                         setTicketForm({
                           name: tt.name, description: tt.description || '',
-                          price: (tt.priceAmount / 100).toString(), quantity: tt.quantity.toString(),
-                          bookingMode: tt.bookingMode, minPerBooking: tt.minPerBooking.toString(),
-                          maxPerBooking: tt.maxPerBooking.toString(),
-                          saleStart: tt.saleStart ? tt.saleStart.split('T')[0] : '',
-                          saleEnd: tt.saleEnd ? tt.saleEnd.split('T')[0] : '',
-                          status: tt.status,
+                          price: (tt.price / 100).toString(), capacity: tt.capacity.toString(),
+                          maxPerOrder: tt.maxPerOrder.toString(),
+                          saleStartAt: tt.saleStartAt ? tt.saleStartAt.split('T')[0] : '',
+                          saleEndAt: tt.saleEndAt ? tt.saleEndAt.split('T')[0] : '',
+                          active: tt.active ? 'true' : 'false',
                         });
                         setShowTicketForm(true);
                       }}>Edit</Button>
@@ -440,16 +384,39 @@ export default function ManageEventContent({ params }: ManageEventContentProps) 
           {showTicketForm && (
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
               <div className="relative w-full max-w-lg rounded-xl border border-gray-700 bg-gray-900 p-6 shadow-2xl">
-                {editingTicket ? (
-                  <TicketTypeForm onSubmit={handleUpdateTicket} isEditing={true} />
-                ) : (
-                  <TicketTypeForm onSubmit={handleCreateTicket} isEditing={false} />
-                )}
+                <form onSubmit={(e) => { e.preventDefault(); editingTicket ? handleUpdateTicket(e) : handleCreateTicket(e); }} className="space-y-4">
+                  <h2 className="text-xl font-bold text-white">{editingTicket ? 'Edit Ticket Type' : 'Create Ticket Type'}</h2>
+                  {formErrors.name && <p className="text-xs text-red-400">{formErrors.name}</p>}
+                  <Input label="Name" value={ticketForm.name} onChange={(e) => setTicketForm({ ...ticketForm, name: e.target.value })} required placeholder="General Admission" />
+                  <Input label="Description (optional)" value={ticketForm.description} onChange={(e) => setTicketForm({ ...ticketForm, description: e.target.value })} placeholder="Early bird discount" />
+                  <div className="grid grid-cols-2 gap-4">
+                    <Input label="Price ($)" type="number" min="0" step="0.01" value={ticketForm.price} onChange={(e) => setTicketForm({ ...ticketForm, price: e.target.value })} required />
+                    <Input label="Capacity" type="number" min="0" value={ticketForm.capacity} onChange={(e) => setTicketForm({ ...ticketForm, capacity: e.target.value })} required />
+                  </div>
+                  <Input label="Max per Order" type="number" min="1" value={ticketForm.maxPerOrder} onChange={(e) => setTicketForm({ ...ticketForm, maxPerOrder: e.target.value })} />
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-1">Active</label>
+                    <select className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm" value={ticketForm.active} onChange={(e) => setTicketForm({ ...ticketForm, active: e.target.value })}>
+                      <option value="true">Active</option>
+                      <option value="false">Inactive</option>
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <Input label="Sale Start (optional)" type="date" value={ticketForm.saleStartAt} onChange={(e) => setTicketForm({ ...ticketForm, saleStartAt: e.target.value })} />
+                    <Input label="Sale End (optional)" type="date" value={ticketForm.saleEndAt} onChange={(e) => setTicketForm({ ...ticketForm, saleEndAt: e.target.value })} />
+                  </div>
+                  <div className="flex justify-end gap-3 pt-2">
+                    <Button variant="secondary" onClick={() => { setShowTicketForm(false); setEditingTicket(null); }}>Cancel</Button>
+                    <Button variant="primary" type="submit">{editingTicket ? 'Update' : 'Create'}</Button>
+                  </div>
+                </form>
               </div>
             </div>
           )}
         </div>
-      )}          {/* Schedule Tab */}
+      )}
+
+      {/* Schedule Tab */}
       {activeTab === 'schedule' && (
         <div className="space-y-4">
           <div className="flex justify-between items-center">
@@ -499,7 +466,7 @@ export default function ManageEventContent({ params }: ManageEventContentProps) 
                   </div>
                   <div className="flex justify-end gap-3 pt-2">
                     <Button variant="secondary" onClick={() => { setShowScheduleForm(false); setEditingSchedule(null); }}>Cancel</Button>
-                    <Button variant="primary" type="submit">{editingSchedule ? 'Update' : 'Add'}</Button>
+                    <Button variant="primary" type="submit">{editingSchedule ? 'Update' : 'Create'}</Button>
                   </div>
                 </form>
               </div>
@@ -518,50 +485,52 @@ export default function ManageEventContent({ params }: ManageEventContentProps) 
           {performers.length === 0 ? (
             <Card variant="default" padding="xl" className="text-center">
               <p className="text-gray-400">No performers added yet.</p>
-              <p className="text-gray-500 text-sm mt-1">Add performers so attendees know who&apos;s playing.</p>
+              <p className="text-gray-500 text-sm mt-1">Add the musicians and performers for this event.</p>
             </Card>
           ) : (
-            <div className="grid gap-3">
+            <div className="space-y-2">
               {performers.map((p) => (
-                <Card key={p.id} variant="default" padding="sm" className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-indigo-600/20 flex items-center justify-center text-indigo-400 font-bold">
-                    {p.name.charAt(0)}
-                  </div>
+                <Card key={p.id} variant="default" padding="sm" className="flex items-center gap-4">
+                  {p.imageUrl ? (
+                    <img src={p.imageUrl} alt={p.name} className="h-12 w-12 rounded-full object-cover" />
+                  ) : (
+                    <div className="h-12 w-12 rounded-full bg-indigo-600/20 flex items-center justify-center text-indigo-400 font-bold">{p.name.charAt(0)}</div>
+                  )}
                   <div className="flex-1">
-                    <div className="font-medium text-white">{p.name}</div>
-                    <div className="text-xs text-gray-400">{p.instrument || p.role}</div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-white">{p.name}</span>
+                      <Badge variant="primary" size="sm">{p.role}</Badge>
+                      {p.instrument && <Badge variant="default" size="sm">{p.instrument}</Badge>}
+                    </div>
+                    {p.bio && <p className="text-gray-400 text-xs mt-0.5 line-clamp-1">{p.bio}</p>}
                   </div>
-                  <Badge variant="primary" size="sm">{p.role}</Badge>
-                  <div className="flex gap-1">
-                    <Button variant="secondary" size="sm" onClick={() => { setEditingPerformer(p); setPerformerForm({ name: p.name, bio: p.bio || '', instrument: p.instrument || '', role: p.role }); setShowPerformerForm(true); }}>Edit</Button>
-                    <Button variant="danger" size="sm" onClick={() => deletePerformer(p)}>Del</Button>
-                  </div>
+                  <Button variant="secondary" size="sm" onClick={() => { setEditingPerformer(p); setPerformerForm({ name: p.name, bio: p.bio || '', instrument: p.instrument || '', role: p.role }); setShowPerformerForm(true); }}>Edit</Button>
+                  <Button variant="danger" size="sm" onClick={() => deletePerformer(p)}>Del</Button>
                 </Card>
               ))}
             </div>
           )}
+
           {showPerformerForm && (
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
               <div className="relative w-full max-w-lg rounded-xl border border-gray-700 bg-gray-900 p-6 shadow-2xl">
                 <form onSubmit={(e) => submitPerformer(e, !!editingPerformer)} className="space-y-4">
                   <h2 className="text-xl font-bold text-white">{editingPerformer ? 'Edit Performer' : 'Add Performer'}</h2>
-                  <Input label="Name" value={performerForm.name} onChange={(e) => setPerformerForm({ ...performerForm, name: e.target.value })} required placeholder="Artist name" />
-                  <Input label="Bio (optional)" value={performerForm.bio} onChange={(e) => setPerformerForm({ ...performerForm, bio: e.target.value })} placeholder="About the performer..." />
-                  <div className="grid grid-cols-2 gap-4">
-                    <Input label="Instrument (optional)" value={performerForm.instrument} onChange={(e) => setPerformerForm({ ...performerForm, instrument: e.target.value })} placeholder="Guitar, Vocals..." />
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-1">Role</label>
-                      <select className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm" value={performerForm.role} onChange={(e) => setPerformerForm({ ...performerForm, role: e.target.value })}>
-                        <option value="PERFORMER">Performer</option>
-                        <option value="HOST">Host</option>
-                        <option value="MC">MC</option>
-                        <option value="SPECIAL_GUEST">Special Guest</option>
-                      </select>
-                    </div>
+                  <Input label="Name" value={performerForm.name} onChange={(e) => setPerformerForm({ ...performerForm, name: e.target.value })} required />
+                  <Input label="Bio (optional)" value={performerForm.bio} onChange={(e) => setPerformerForm({ ...performerForm, bio: e.target.value })} />
+                  <Input label="Instrument (optional)" value={performerForm.instrument} onChange={(e) => setPerformerForm({ ...performerForm, instrument: e.target.value })} />
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-1">Role</label>
+                    <select className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm" value={performerForm.role} onChange={(e) => setPerformerForm({ ...performerForm, role: e.target.value })}>
+                      <option value="PERFORMER">Performer</option>
+                      <option value="BAND">Band</option>
+                      <option value="HOST">Host</option>
+                      <option value="GUEST">Guest</option>
+                    </select>
                   </div>
                   <div className="flex justify-end gap-3 pt-2">
                     <Button variant="secondary" onClick={() => { setShowPerformerForm(false); setEditingPerformer(null); }}>Cancel</Button>
-                    <Button variant="primary" type="submit">{editingPerformer ? 'Update' : 'Add'}</Button>
+                    <Button variant="primary" type="submit">{editingPerformer ? 'Update' : 'Create'}</Button>
                   </div>
                 </form>
               </div>
@@ -579,20 +548,19 @@ export default function ManageEventContent({ params }: ManageEventContentProps) 
           </div>
           {faqs.length === 0 ? (
             <Card variant="default" padding="xl" className="text-center">
-              <p className="text-gray-400">No FAQs yet.</p>
-              <p className="text-gray-500 text-sm mt-1">Add frequently asked questions for attendees.</p>
+              <p className="text-gray-400">No FAQs added yet.</p>
+              <p className="text-gray-500 text-sm mt-1">Add frequently asked questions about this event.</p>
             </Card>
           ) : (
             <div className="space-y-2">
               {faqs.map((faq) => (
-                <Card key={faq.id} variant="default" padding="md">
+                <Card key={faq.id} variant="default" padding="sm">
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
-                      <h3 className="font-medium text-white">{faq.question}</h3>
+                      <p className="font-medium text-white">{faq.question}</p>
                       <p className="text-gray-400 text-sm mt-1">{faq.answer}</p>
                     </div>
-                    <div className="flex items-center gap-2 ml-4">
-                      {!faq.isPublished && <Badge variant="warning" size="sm">Draft</Badge>}
+                    <div className="flex gap-2 ml-4 shrink-0">
                       <Button variant="secondary" size="sm" onClick={() => { setEditingFaq(faq); setFaqForm({ question: faq.question, answer: faq.answer }); setShowFaqForm(true); }}>Edit</Button>
                       <Button variant="danger" size="sm" onClick={() => deleteFaq(faq)}>Del</Button>
                     </div>
@@ -601,19 +569,17 @@ export default function ManageEventContent({ params }: ManageEventContentProps) 
               ))}
             </div>
           )}
+
           {showFaqForm && (
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
               <div className="relative w-full max-w-lg rounded-xl border border-gray-700 bg-gray-900 p-6 shadow-2xl">
                 <form onSubmit={(e) => submitFaq(e, !!editingFaq)} className="space-y-4">
                   <h2 className="text-xl font-bold text-white">{editingFaq ? 'Edit FAQ' : 'Add FAQ'}</h2>
-                  <Input label="Question" value={faqForm.question} onChange={(e) => setFaqForm({ ...faqForm, question: e.target.value })} required placeholder="What should I bring?" />
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-1">Answer</label>
-                    <textarea className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm min-h-[100px]" value={faqForm.answer} onChange={(e) => setFaqForm({ ...faqForm, answer: e.target.value })} required placeholder="Bring your instrument and..." />
-                  </div>
+                  <Input label="Question" value={faqForm.question} onChange={(e) => setFaqForm({ ...faqForm, question: e.target.value })} required />
+                  <Input label="Answer" value={faqForm.answer} onChange={(e) => setFaqForm({ ...faqForm, answer: e.target.value })} required />
                   <div className="flex justify-end gap-3 pt-2">
                     <Button variant="secondary" onClick={() => { setShowFaqForm(false); setEditingFaq(null); }}>Cancel</Button>
-                    <Button variant="primary" type="submit">{editingFaq ? 'Update' : 'Add'}</Button>
+                    <Button variant="primary" type="submit">{editingFaq ? 'Update' : 'Create'}</Button>
                   </div>
                 </form>
               </div>
@@ -622,39 +588,33 @@ export default function ManageEventContent({ params }: ManageEventContentProps) 
         </div>
       )}
 
-      {/* Live Updates Tab */}
+      {/* Updates Tab */}
       {activeTab === 'updates' && (
         <div className="space-y-4">
           <div className="flex justify-between items-center">
             <h2 className="text-lg font-semibold text-white">Live Updates</h2>
-            <Button variant="primary" size="sm" onClick={() => { setEditingUpdate(null); setShowUpdateForm(true); }}>+ Publish Update</Button>
+            <Button variant="primary" size="sm" onClick={() => { setEditingUpdate(null); setShowUpdateForm(true); }}>+ Add Update</Button>
           </div>
           {updates.length === 0 ? (
             <Card variant="default" padding="xl" className="text-center">
-              <p className="text-gray-400">No live updates published yet.</p>
-              <p className="text-gray-500 text-sm mt-1">During the event, publish updates to keep attendees informed.</p>
+              <p className="text-gray-400">No updates posted yet.</p>
+              <p className="text-gray-500 text-sm mt-1">Post live updates for attendees about this event.</p>
             </Card>
           ) : (
             <div className="space-y-2">
               {updates.map((u) => (
                 <Card key={u.id} variant="default" padding="sm">
-                  <div className="flex items-start gap-3">
+                  <div className="flex items-start justify-between">
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
-                        <Badge variant={u.updateType === 'EMERGENCY' ? 'error' : 'primary'} size="sm">
-                          {u.updateType.replace(/_/g, ' ')}
-                        </Badge>
-                        {u.isPinned && <Badge variant="warning" size="sm">📌 Pinned</Badge>}
+                        <Badge variant={u.updateType === 'IMPORTANT' ? 'error' : 'default'} size="sm">{u.updateType}</Badge>
+                        {u.isPinned && <Badge variant="primary" size="sm">Pinned</Badge>}
+                        {u.author?.name && <span className="text-xs text-gray-500">by {u.author.name}</span>}
                       </div>
-                      <p className="text-white text-sm mt-1">{u.message}</p>
-                      <div className="flex items-center gap-2 mt-1 text-xs text-gray-500">
-                        <span>{u.author?.displayName}</span>
-                        <span>•</span>
-                        <span>{new Date(u.publishedAt).toLocaleString()}</span>
-                        {u.visibility === 'ATTENDEES_ONLY' && <Badge variant="warning" size="sm">Attendees only</Badge>}
-                      </div>
+                      <p className="text-gray-300 text-sm mt-1">{u.message}</p>
+                      <p className="text-xs text-gray-500 mt-1">{new Date(u.publishedAt || u.createdAt).toLocaleString()}</p>
                     </div>
-                    <div className="flex gap-1 ml-4">
+                    <div className="flex gap-2 ml-4 shrink-0">
                       <Button variant="secondary" size="sm" onClick={() => { setEditingUpdate(u); setUpdateForm({ message: u.message, updateType: u.updateType, visibility: u.visibility, isPinned: u.isPinned }); setShowUpdateForm(true); }}>Edit</Button>
                       <Button variant="danger" size="sm" onClick={() => deleteUpdate(u)}>Del</Button>
                     </div>
@@ -663,31 +623,23 @@ export default function ManageEventContent({ params }: ManageEventContentProps) 
               ))}
             </div>
           )}
+
           {showUpdateForm && (
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
               <div className="relative w-full max-w-lg rounded-xl border border-gray-700 bg-gray-900 p-6 shadow-2xl">
                 <form onSubmit={(e) => submitUpdate(e, !!editingUpdate)} className="space-y-4">
-                  <h2 className="text-xl font-bold text-white">{editingUpdate ? 'Edit Update' : 'Publish Live Update'}</h2>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-1">Update Type</label>
-                    <select className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm" value={updateForm.updateType} onChange={(e) => setUpdateForm({ ...updateForm, updateType: e.target.value })}>
-                      <option value="INSTRUCTION">Instruction</option>
-                      <option value="EVENT_STARTED">Event Started</option>
-                      <option value="ENTRY_OPENED">Entry Opened</option>
-                      <option value="PERFORMANCE_NOW">Performance Now</option>
-                      <option value="BREAK">Break</option>
-                      <option value="TIMING_CHANGE">Timing Change</option>
-                      <option value="VENUE_CHANGE">Venue Change</option>
-                      <option value="EMERGENCY">Emergency</option>
-                      <option value="CANCELLATION">Cancellation</option>
-                      <option value="EVENT_COMPLETED">Event Completed</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-1">Message</label>
-                    <textarea className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm min-h-[80px]" value={updateForm.message} onChange={(e) => setUpdateForm({ ...updateForm, message: e.target.value })} required placeholder="What&apos;s happening?" />
-                  </div>
+                  <h2 className="text-xl font-bold text-white">{editingUpdate ? 'Edit Update' : 'Add Update'}</h2>
+                  <Input label="Message" value={updateForm.message} onChange={(e) => setUpdateForm({ ...updateForm, message: e.target.value })} required />
                   <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-1">Update Type</label>
+                      <select className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm" value={updateForm.updateType} onChange={(e) => setUpdateForm({ ...updateForm, updateType: e.target.value })}>
+                        <option value="INSTRUCTION">Instruction</option>
+                        <option value="IMPORTANT">Important</option>
+                        <option value="REMINDER">Reminder</option>
+                        <option value="CHANGE">Change</option>
+                      </select>
+                    </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-300 mb-1">Visibility</label>
                       <select className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm" value={updateForm.visibility} onChange={(e) => setUpdateForm({ ...updateForm, visibility: e.target.value })}>
@@ -695,16 +647,14 @@ export default function ManageEventContent({ params }: ManageEventContentProps) 
                         <option value="ATTENDEES_ONLY">Attendees Only</option>
                       </select>
                     </div>
-                    <div className="flex items-end pb-2">
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input type="checkbox" checked={updateForm.isPinned} onChange={(e) => setUpdateForm({ ...updateForm, isPinned: e.target.checked })} className="rounded bg-gray-800 border-gray-700" />
-                        <span className="text-sm text-gray-300">Pin to top</span>
-                      </label>
-                    </div>
                   </div>
+                  <label className="flex items-center gap-2">
+                    <input type="checkbox" checked={updateForm.isPinned} onChange={(e) => setUpdateForm({ ...updateForm, isPinned: e.target.checked })} className="rounded border-gray-700" />
+                    <span className="text-sm text-gray-300">Pin this update</span>
+                  </label>
                   <div className="flex justify-end gap-3 pt-2">
                     <Button variant="secondary" onClick={() => { setShowUpdateForm(false); setEditingUpdate(null); }}>Cancel</Button>
-                    <Button variant="primary" type="submit">{editingUpdate ? 'Update' : 'Publish'}</Button>
+                    <Button variant="primary" type="submit">{editingUpdate ? 'Update' : 'Create'}</Button>
                   </div>
                 </form>
               </div>

@@ -6,7 +6,6 @@ import { createLogger } from '@/lib/logger';
 import { writeAuditLog, getRequestMetadata } from '@/lib/audit';
 
 export const dynamic = 'force-dynamic';
-
 const log = createLogger('api/tickets/[ticketNumber]/cancel');
 
 export async function POST(
@@ -21,16 +20,13 @@ export async function POST(
 
     const ticket = await prisma.ticket.findUnique({
       where: { ticketNumber: params.ticketNumber },
-      include: {
-        event: { select: { id: true, organizerId: true, title: true } },
-      },
+      include: { event: { select: { id: true, organizerId: true, title: true } } },
     });
 
     if (!ticket) {
       return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
     }
 
-    // Authorization: purchaser, organizer, or admin
     const isPurchaser = ticket.userId === session.user.id;
     const isOrganizer = ticket.event.organizerId === session.user.id;
     const isAdmin = session.user.role === 'ADMIN';
@@ -38,57 +34,31 @@ export async function POST(
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    // Validate state
     if (ticket.status === 'CHECKED_IN') {
-      return NextResponse.json(
-        { error: 'Cannot cancel a ticket that has already been checked in.' },
-        { status: 400 },
-      );
+      return NextResponse.json({ error: 'Cannot cancel a ticket that has already been checked in.' }, { status: 400 });
     }
 
     if (ticket.status === 'CANCELLED') {
-      return NextResponse.json(
-        { error: 'This ticket has already been cancelled.' },
-        { status: 400 },
-      );
+      return NextResponse.json({ error: 'This ticket has already been cancelled.' }, { status: 400 });
     }
 
-    // Perform cancellation in a transaction
     const result = await prisma.$transaction(async (tx) => {
       const updatedTicket = await tx.ticket.update({
         where: { id: ticket.id },
-        data: { status: 'CANCELLED', cancelledAt: new Date() },
+        data: { status: 'CANCELLED' },
       });
 
-      // If ticket type was marked SOLD_OUT, reactivate if capacity freed
-      if (ticket.category) {
-        const ticketType = await tx.ticketType.findFirst({
-          where: { eventId: ticket.eventId, name: ticket.category },
+      // Release capacity
+      if (ticket.ticketTypeId) {
+        await tx.ticketType.update({
+          where: { id: ticket.ticketTypeId },
+          data: { soldCount: { decrement: 1 } },
         });
-        if (ticketType && ticketType.status === 'SOLD_OUT') {
-          const activeCount = await tx.ticket.count({
-            where: {
-              eventId: ticket.eventId,
-              category: ticket.category,
-              status: { in: ['CONFIRMED', 'CHECKED_IN'] },
-            },
-          });
-          if (activeCount < ticketType.quantity) {
-            await tx.ticketType.update({
-              where: { id: ticketType.id },
-              data: { status: 'ACTIVE' },
-            });
-          }
-        }
       }
 
-      // Update order status if all tickets cancelled
       if (ticket.orderId) {
         const remaining = await tx.ticket.count({
-          where: {
-            orderId: ticket.orderId,
-            status: { in: ['CONFIRMED', 'CHECKED_IN'] },
-          },
+          where: { orderId: ticket.orderId, status: { in: ['CONFIRMED', 'CHECKED_IN'] } },
         });
         if (remaining === 0) {
           await tx.order.update({
@@ -106,19 +76,12 @@ export async function POST(
       entityType: 'Ticket',
       entityId: result.id,
       actorId: session.user.id,
-      metadata: {
-        ticketNumber: params.ticketNumber,
-        eventTitle: ticket.event.title,
-      },
+      metadata: { ticketNumber: params.ticketNumber, eventTitle: ticket.event.title },
       ...getRequestMetadata(request),
     });
 
     log.info({ ticketNumber: params.ticketNumber }, 'Ticket cancelled');
-
-    return NextResponse.json({
-      message: 'Ticket cancelled successfully.',
-      ticket: { ticketNumber: params.ticketNumber, status: 'CANCELLED' },
-    });
+    return NextResponse.json({ message: 'Ticket cancelled successfully.', ticket: { ticketNumber: params.ticketNumber, status: 'CANCELLED' } });
   } catch (error) {
     log.error({ error, ticketNumber: params.ticketNumber }, 'Failed to cancel ticket');
     return NextResponse.json({ error: 'Failed to cancel ticket.' }, { status: 500 });

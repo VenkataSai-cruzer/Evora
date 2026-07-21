@@ -5,7 +5,6 @@ import { prisma } from '@/lib/prisma';
 import { createLogger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
-
 const log = createLogger('api/tickets/[ticketNumber]');
 
 export async function GET(
@@ -26,28 +25,14 @@ export async function GET(
             id: true,
             title: true,
             slug: true,
-            coverImageUrl: true,
-            eventLogoUrl: true,
-            edition: true,
-            startDate: true,
-            startTime: true,
-            endDate: true,
-            endTime: true,
+            posterObjectKey: true,
+            startAt: true,
             venueName: true,
             venueAddress: true,
-            entryGate: true,
-            entryInstructions: true,
-            capacity: true,
-            ticketType: true,
-            priceAmount: true,
             status: true,
             organizerId: true,
             organizer: {
-              select: {
-                id: true,
-                displayName: true,
-                avatarUrl: true,
-              },
+              select: { id: true, name: true },
             },
           },
         },
@@ -55,28 +40,23 @@ export async function GET(
           select: {
             id: true,
             orderNumber: true,
-            bookingType: true,
-            attendeeCount: true,
             status: true,
+            total: true,
           },
         },
         attendee: {
           select: {
             id: true,
-            fullName: true,
-            email: true,
-            phone: true,
-            ticketCategory: true,
-            isCheckedIn: true,
-            checkedInAt: true,
+            attendeeName: true,
+            attendeeEmail: true,
+            attendeePhone: true,
           },
         },
+        ticketType: {
+          select: { id: true, name: true, price: true },
+        },
         user: {
-          select: {
-            id: true,
-            displayName: true,
-            email: true,
-          },
+          select: { id: true, name: true, email: true },
         },
       },
     });
@@ -85,43 +65,17 @@ export async function GET(
       return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
     }
 
-    // Authorization: ticket purchaser, attendee, event organizer, or admin
+    // Authorization
     const isPurchaser = ticket.userId === session.user.id;
     const isOrganizer = ticket.event.organizerId === session.user.id;
     const isAdmin = session.user.role === 'ADMIN';
-    const isAttendee = ticket.attendee?.email === session.user.email;
+    const isAttendee = ticket.attendee?.attendeeEmail === session.user.email;
 
     if (!isPurchaser && !isOrganizer && !isAdmin && !isAttendee) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 });
     }
 
-    // Do not expose qrSecret to unauthorized users
-    const response: Record<string, unknown> = {
-      id: ticket.ticketNumber,
-      ticketNumber: ticket.ticketNumber,
-      type: ticket.type,
-      category: ticket.category,
-      status: ticket.status,
-      priceAmount: ticket.priceAmount,
-      purchasedAt: ticket.purchasedAt,
-      cancelledAt: ticket.cancelledAt,
-      expiredAt: ticket.expiredAt,
-      entryGate: ticket.entryGate,
-      zone: ticket.zone,
-      seat: ticket.seat,
-      event: ticket.event,
-      order: ticket.order,
-      attendee: ticket.attendee,
-      user: ticket.user,
-    };
-
-    // Only include QR secret for valid/checked-in tickets owned by purchaser/organizer/admin
-    if ((ticket.status === 'CONFIRMED' || ticket.status === 'CHECKED_IN') && (isPurchaser || isOrganizer || isAdmin)) {
-      response.qrSecret = ticket.qrSecret;
-      response.qrDataUrl = ticket.qrDataUrl;
-    }
-
-    return NextResponse.json({ ticket: response });
+    return NextResponse.json({ ticket });
   } catch (error) {
     log.error({ error, ticketNumber: params.ticketNumber }, 'Failed to fetch ticket');
     return NextResponse.json({ error: 'Failed to load ticket.' }, { status: 500 });

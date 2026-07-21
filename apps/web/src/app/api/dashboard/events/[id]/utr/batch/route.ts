@@ -23,16 +23,10 @@ async function checkEventAccess(eventId: string) {
   return { session, event };
 }
 
-/**
- * Parse UTR numbers from CSV text.
- * Supports: CSV with UTR column, or simple list of 12-digit numbers.
- * Common bank formats: UTR number may be in a column, or part of a transaction description.
- */
 function parseUtrsFromCsv(csvText: string): { utrNumber: string; amount?: number }[] {
   const lines = csvText.split(/\r?\n/).filter((l) => l.trim());
   const results: { utrNumber: string; amount?: number }[] = [];
 
-  // Try to detect header row
   const firstLine = lines[0]?.toLowerCase() || '';
   const hasHeader = /utr|ref|transaction|txn|amount|date/i.test(firstLine);
   const dataLines = hasHeader ? lines.slice(1) : lines;
@@ -41,27 +35,22 @@ function parseUtrsFromCsv(csvText: string): { utrNumber: string; amount?: number
     const trimmed = line.trim();
     if (!trimmed) continue;
 
-    // Try parsing as CSV columns
     const columns = trimmed.split(',').map((c) => c.trim().replace(/^["']|["']$/g, ''));
 
-    // Look for a 12-digit number in any column
     let utrNumber = '';
     let amount: number | undefined;
 
     for (const col of columns) {
       const cleaned = col.replace(/[\s-]/g, '');
-      // Check if it's a 12-digit number (UTR)
       if (/^\d{12}$/.test(cleaned)) {
         utrNumber = cleaned;
       }
-      // Check if it's a monetary amount
       const amountMatch = col.replace(/[₹$,\s]/g, '').match(/^(\d+(\.\d{1,2})?)$/);
       if (amountMatch && parseFloat(amountMatch[1]) > 0) {
-        amount = Math.round(parseFloat(amountMatch[1]) * 100); // Convert to cents
+        amount = Math.round(parseFloat(amountMatch[1]) * 100);
       }
     }
 
-    // If no CSV column matched, try extracting 12-digit number from the raw line
     if (!utrNumber) {
       const utrMatch = trimmed.replace(/[\s-]/g, '').match(/\b(\d{12})\b/);
       if (utrMatch) {
@@ -92,10 +81,9 @@ export async function POST(
     const eventId = params.id;
 
     if (!file) {
-      return NextResponse.json({ error: 'No file provided. Please upload a CSV or Excel file.' }, { status: 400 });
+      return NextResponse.json({ error: 'No file provided. Please upload a CSV file.' }, { status: 400 });
     }
 
-    // Read file content
     let csvText: string;
     const fileName = file.name.toLowerCase();
 
@@ -106,11 +94,9 @@ export async function POST(
         error: 'Excel files are not yet supported. Please export your bank statement as CSV.',
       }, { status: 400 });
     } else {
-      // Try reading as text regardless
       csvText = await file.text();
     }
 
-    // Parse UTRs from CSV
     const parsed = parseUtrsFromCsv(csvText);
 
     if (parsed.length === 0) {
@@ -120,99 +106,88 @@ export async function POST(
       }, { status: 400 });
     }
 
-    // Create batch and records in a transaction
-    const result = await prisma.$transaction(async (tx) => {
-      const batch = await tx.utrBatch.create({
-        data: {
-          eventId,
-          uploadedById: access.session.user.id,
-          filename: file.name,
-          rowCount: parsed.length,
-          status: 'PROCESSING',
-        },
-      });
+    // Process UTRs by matching against existing pending payments
+    const results = await prisma.$transaction(async (tx) => {
+      const matched: { utrNumber: string; paymentId: string; orderId: string }[] = [];
+      const unmatched: { utrNumber: string; amount?: number }[] = [];
 
-      // Create UTR records
-      let matchedCount = 0;
       for (const item of parsed) {
-        // Check if this UTR matches any pending payment
-        const matchingPayment = await tx.payment.findUnique({
+        // Check if this UTR already exists in the system
+        const existingPayment = await tx.payment.findUnique({
           where: { utrNumber: item.utrNumber },
+          include: { order: true },
         });
 
-        const isMatched = !!matchingPayment;
-
-        await tx.utrRecord.create({
-          data: {
-            batchId: batch.id,
+        if (existingPayment) {
+          matched.push({
             utrNumber: item.utrNumber,
-            amount: item.amount,
-            isMatched,
-            matchedPaymentId: matchingPayment?.id || null,
-          },
-        });
-
-        if (isMatched) {
-          matchedCount++;
-
-          // Update payment as verified
-          await tx.payment.update({
-            where: { id: matchingPayment.id },
-            data: {
-              status: 'SUCCEEDED',
-              utrBatchId: batch.id,
-              verifiedAt: new Date(),
-            },
+            paymentId: existingPayment.id,
+            orderId: existingPayment.orderId,
           });
-
-          // Update the associated order to CONFIRMED
-          await tx.order.update({
-            where: { id: matchingPayment.orderId },
-            data: {
-              status: 'CONFIRMED',
-              paymentProvider: 'UTR',
-            },
-          });
-
-          // Update all tickets for this order to CONFIRMED
-          await tx.ticket.updateMany({
-            where: { orderId: matchingPayment.orderId },
-            data: { status: 'CONFIRMED' },
-          });
+          continue;
         }
+
+        // Try to match against pending UTR payments for this event
+        if (item.amount) {
+          const pendingPayment = await tx.payment.findFirst({
+            where: {
+              method: 'UTR',
+              status: 'PENDING',
+              order: { eventId },
+              amount: item.amount,
+            },
+            include: { order: true },
+          });
+
+          if (pendingPayment) {
+            await tx.payment.update({
+              where: { id: pendingPayment.id },
+              data: {
+                status: 'SUCCEEDED',
+                utrNumber: item.utrNumber,
+                verifiedAt: new Date(),
+              },
+            });
+
+            await tx.order.update({
+              where: { id: pendingPayment.orderId },
+              data: { status: 'CONFIRMED', paymentProvider: 'UTR' },
+            });
+
+            await tx.ticket.updateMany({
+              where: { orderId: pendingPayment.orderId },
+              data: { status: 'CONFIRMED' },
+            });
+
+            matched.push({
+              utrNumber: item.utrNumber,
+              paymentId: pendingPayment.id,
+              orderId: pendingPayment.orderId,
+            });
+            continue;
+          }
+        }
+
+        unmatched.push({ utrNumber: item.utrNumber, amount: item.amount });
       }
 
-      // Update batch stats
-      await tx.utrBatch.update({
-        where: { id: batch.id },
-        data: {
-          matchedCount,
-          unmatchedCount: parsed.length - matchedCount,
-          status: 'COMPLETED',
-        },
-      });
-
-      return { batch, matchedCount, unmatchedCount: parsed.length - matchedCount, totalFound: parsed.length };
+      return { matched, unmatched };
     });
 
     log.info({
       eventId,
-      batchId: result.batch.id,
-      totalFound: result.totalFound,
-      matched: result.matchedCount,
-      unmatched: result.unmatchedCount,
-    }, 'UTR batch uploaded and processed');
+      totalFound: parsed.length,
+      matched: results.matched.length,
+      unmatched: results.unmatched.length,
+    }, 'UTR batch processed');
 
     return NextResponse.json({
-      batch: {
-        id: result.batch.id,
-        filename: result.batch.filename,
-        totalFound: result.totalFound,
-        matchedCount: result.matchedCount,
-        unmatchedCount: result.unmatchedCount,
-        status: result.batch.status,
-      },
-      message: `Found ${result.totalFound} UTR numbers. ${result.matchedCount} matched and verified. ${result.unmatchedCount} unmatched.`,
+      matchedCount: results.matched.length,
+      unmatchedCount: results.unmatched.length,
+      totalFound: parsed.length,
+      matched: results.matched,
+      unmatched: results.unmatched,
+      message: `Found ${parsed.length} UTR numbers. ${results.matched.length} matched and verified. ${results.unmatched.length} unmatched (you can manually link these to orders).`,
     }, { status: 201 });
   } catch (error) {
     log.error({ error, eventId: params.id }, 'Failed to process UTR batch');
@@ -230,20 +205,6 @@ export async function GET(
       return NextResponse.json({ error: access.error }, { status: access.status });
     }
 
-    const batches = await prisma.utrBatch.findMany({
-      where: { eventId: params.id },
-      orderBy: { createdAt: 'desc' },
-      include: {
-        uploaded: {
-          select: { id: true, displayName: true },
-        },
-        _count: {
-          select: { records: true },
-        },
-      },
-    });
-
-    // Get UTR payment stats
     const pendingPayments = await prisma.payment.count({
       where: {
         order: { eventId: params.id },
@@ -260,17 +221,41 @@ export async function GET(
       },
     });
 
+    const allUtrPayments = await prisma.payment.findMany({
+      where: {
+        method: 'UTR',
+        order: { eventId: params.id },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+      select: {
+        id: true,
+        utrNumber: true,
+        amount: true,
+        status: true,
+        verifiedAt: true,
+        createdAt: true,
+        order: {
+          select: {
+            id: true,
+            orderNumber: true,
+            status: true,
+            userId: true,
+          },
+        },
+      },
+    });
+
     return NextResponse.json({
-      batches,
+      payments: allUtrPayments,
       stats: {
         pendingPayments,
         verifiedPayments,
-        totalBatches: batches.length,
-        totalRecords: (batches as any[]).reduce((sum: number, b: any) => sum + b._count.records, 0),
+        totalPayments: allUtrPayments.length,
       },
     });
   } catch (error) {
-    log.error({ error, eventId: params.id }, 'Failed to fetch UTR batches');
+    log.error({ error, eventId: params.id }, 'Failed to fetch UTR data');
     return NextResponse.json({ error: 'Failed to load UTR data.' }, { status: 500 });
   }
 }

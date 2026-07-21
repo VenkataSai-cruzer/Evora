@@ -11,16 +11,13 @@ const log = createLogger('api/dashboard/events/[id]/ticket-types/[ticketTypeId]'
 const updateTicketTypeSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   description: z.string().max(500).optional().nullable(),
-  price: z.number().min(0).optional().default(0),
+  price: z.number().min(0).optional(),
   currency: z.string().max(10).optional(),
-  quantity: z.number().int().min(0).optional(),
-  saleStart: z.string().optional().nullable(),
-  saleEnd: z.string().optional().nullable(),
-  minPerBooking: z.number().int().min(1).optional(),
-  maxPerBooking: z.number().int().min(1).max(100).optional(),
-  bookingMode: z.enum(['SOLO', 'DUO', 'TRIO', 'GROUP', 'FLEXIBLE']).optional(),
-  visibility: z.enum(['PUBLIC', 'PRIVATE']).optional(),
-  status: z.enum(['DRAFT', 'ACTIVE', 'PAUSED', 'SOLD_OUT', 'CLOSED']).optional(),
+  capacity: z.number().int().min(0).optional(),
+  maxPerOrder: z.number().int().min(1).max(100).optional(),
+  active: z.boolean().optional(),
+  saleStartAt: z.string().optional().nullable(),
+  saleEndAt: z.string().optional().nullable(),
 });
 
 async function checkTicketTypeAccess(eventId: string, ticketTypeId: string) {
@@ -73,73 +70,64 @@ export async function PATCH(
 
     const data = parsed.data;
 
-    // If reducing quantity, ensure it doesn't go below already sold count
-    if (data.quantity !== undefined) {
+    // If reducing capacity, ensure it doesn't go below already sold count
+    if (data.capacity !== undefined) {
       const soldCount = await prisma.ticket.count({
         where: {
           eventId: params.id,
-          category: access.ticketType.name,
+          ticketTypeId: params.ticketTypeId,
           status: { in: ['CONFIRMED', 'CHECKED_IN'] },
         },
       });
 
-      if (data.quantity < soldCount) {
+      if (data.capacity < soldCount) {
         return NextResponse.json(
-          { error: `Cannot reduce quantity below ${soldCount} (already sold).` },
+          { error: `Cannot reduce capacity below ${soldCount} (already sold).` },
           { status: 400 },
         );
       }
     }
 
-    // Validate sale window
-    const saleStart = data.saleStart !== undefined
-      ? (data.saleStart ? new Date(data.saleStart) : null)
+    const saleStartAt = data.saleStartAt !== undefined
+      ? (data.saleStartAt ? new Date(data.saleStartAt) : null)
       : undefined;
-    const saleEnd = data.saleEnd !== undefined
-      ? (data.saleEnd ? new Date(data.saleEnd) : null)
+    const saleEndAt = data.saleEndAt !== undefined
+      ? (data.saleEndAt ? new Date(data.saleEndAt) : null)
       : undefined;
 
-    if (saleStart && saleEnd && saleEnd <= saleStart) {
+    if (saleStartAt && saleEndAt && saleEndAt <= saleStartAt) {
       return NextResponse.json(
         { error: 'Sale end must be after sale start.' },
         { status: 400 },
       );
     }
 
-    // Build update data
     const updateData: Record<string, unknown> = {};
     if (data.name !== undefined) updateData.name = data.name;
     if (data.description !== undefined) updateData.description = data.description;
-    if (data.price !== undefined) updateData.priceAmount = Math.round(data.price * 100);
+    if (data.price !== undefined) updateData.price = data.price;
     if (data.currency !== undefined) updateData.currency = data.currency;
-    if (data.quantity !== undefined) updateData.quantity = data.quantity;
-    if (saleStart !== undefined) updateData.saleStart = saleStart;
-    if (saleEnd !== undefined) updateData.saleEnd = saleEnd;
-    if (data.minPerBooking !== undefined) updateData.minPerBooking = data.minPerBooking;
-    if (data.maxPerBooking !== undefined) updateData.maxPerBooking = data.maxPerBooking;
-    if (data.bookingMode !== undefined) updateData.bookingMode = data.bookingMode;
-    if (data.visibility !== undefined) updateData.visibility = data.visibility;
-    if (data.status !== undefined) updateData.status = data.status;
+    if (data.capacity !== undefined) updateData.capacity = data.capacity;
+    if (data.maxPerOrder !== undefined) updateData.maxPerOrder = data.maxPerOrder;
+    if (data.active !== undefined) updateData.active = data.active;
+    if (saleStartAt !== undefined) updateData.saleStartAt = saleStartAt;
+    if (saleEndAt !== undefined) updateData.saleEndAt = saleEndAt;
 
     const ticketType = await prisma.ticketType.update({
       where: { id: params.ticketTypeId },
       data: updateData,
     });
 
-    const isStatusChange = data.status !== undefined;
     await writeAuditLog({
-      action: isStatusChange ? 'TICKET_SALES_' + (ticketType.status === 'ACTIVE' ? 'ACTIVATED' : ticketType.status === 'PAUSED' ? 'PAUSED' : ticketType.status === 'SOLD_OUT' ? 'SOLD_OUT' : 'UPDATED') : 'TICKET_TYPE_UPDATED',
+      action: 'TICKET_TYPE_UPDATED',
       entityType: 'TicketType',
       entityId: ticketType.id,
       actorId: access.session.user.id,
-      metadata: { eventId: params.id, name: ticketType.name, status: ticketType.status, changedFields: Object.keys(data) },
+      metadata: { eventId: params.id, name: ticketType.name, changedFields: Object.keys(data) },
       ...getRequestMetadata(request),
     });
 
-    log.info(
-      { eventId: params.id, ticketTypeId: ticketType.id, status: ticketType.status },
-      'Ticket type updated',
-    );
+    log.info({ eventId: params.id, ticketTypeId: ticketType.id }, 'Ticket type updated');
 
     return NextResponse.json({ ticketType });
   } catch (error) {
@@ -158,18 +146,17 @@ export async function DELETE(
       return NextResponse.json({ error: access.error }, { status: access.status });
     }
 
-    // Prevent deletion if tickets have been sold for this ticket type
     const hasOrders = await prisma.ticket.findFirst({
       where: {
         eventId: params.id,
-        category: access.ticketType.name,
+        ticketTypeId: params.ticketTypeId,
         status: { not: 'CANCELLED' },
       },
     });
 
     if (hasOrders) {
       return NextResponse.json(
-        { error: 'Cannot delete a ticket type with active orders. Close it instead.' },
+        { error: 'Cannot delete a ticket type with active orders. Deactivate it instead.' },
         { status: 400 },
       );
     }
@@ -187,9 +174,7 @@ export async function DELETE(
       ...getRequestMetadata(_request),
     });
 
-    log.info({ eventId: params.id, ticketTypeId: params.ticketTypeId }, 'Ticket type deleted');
-
-    return NextResponse.json({ message: 'Ticket type deleted successfully.' });
+    return NextResponse.json({ message: 'Ticket type deleted.' });
   } catch (error) {
     log.error({ error, eventId: params.id, ticketTypeId: params.ticketTypeId }, 'Failed to delete ticket type');
     return NextResponse.json({ error: 'Failed to delete ticket type.' }, { status: 500 });

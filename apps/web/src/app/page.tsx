@@ -2,30 +2,28 @@ import Link from 'next/link';
 import { prisma } from '@/lib/prisma';
 import { Badge } from '@/components/ui/Badge';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { parseInstruments, formatTime, formatDate } from '@/lib/prisma-types';
+import { parseInstruments, formatDate } from '@/lib/prisma-types';
 
 export default async function HomePage() {
-  const [events, totalEvents, totalUsers, totalVenues, totalTickets] = await Promise.all([
+  const [events, totalEvents, totalUsers, totalTickets] = await Promise.all([
     prisma.event.findMany({
       where: {
-        status: { in: ['PUBLISHED', 'SALES_OPEN'] },
-        visibility: 'PUBLIC',
-        startDate: { gte: new Date() },
+        status: 'PUBLISHED',
+        startAt: { gte: new Date() },
       },
-      orderBy: { startDate: 'asc' },
+      orderBy: { startAt: 'asc' },
       take: 4,
       select: {
         id: true,
         title: true,
         slug: true,
-        coverImageUrl: true,
-        startDate: true,
-        startTime: true,
+        posterObjectKey: true,
+        startAt: true,
         venueName: true,
-        capacity: true,
-        ticketType: true,
-        priceAmount: true,
-        instruments: true,
+        totalCapacity: true,
+        ticketTypes: {
+          select: { id: true, name: true, price: true },
+        },
         _count: {
           select: {
             tickets: {
@@ -35,21 +33,13 @@ export default async function HomePage() {
         },
       },
     }),
-    prisma.event.count({ where: { status: { in: ['PUBLISHED', 'SALES_OPEN'] } } }),
+    prisma.event.count({ where: { status: 'PUBLISHED' } }),
     prisma.user.count(),
-    prisma.event.groupBy({
-      by: ['venueName'],
-      where: { status: { in: ['PUBLISHED', 'SALES_OPEN'] } },
-      _count: { venueName: true },
-    }),
     prisma.ticket.count({ where: { status: { in: ['CONFIRMED', 'CHECKED_IN'] } } }),
   ]);
 
-  const uniqueVenues = totalVenues.length;
-  const parsedEvents = events.map((event) => ({
-    ...event,
-    instrumentsList: parseInstruments(event.instruments),
-  }));
+  const uniqueVenues = totalEvents;
+  const parsedEvents = events;
 
   return (
     <div className="min-h-screen">
@@ -108,7 +98,9 @@ export default async function HomePage() {
         {parsedEvents.length > 0 ? (
           <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {parsedEvents.map((event) => {
-              const spotsLeft = event.capacity - event._count.tickets;
+              const spotsLeft = event.totalCapacity - event._count.tickets;
+              const isFree = event.ticketTypes.some((t) => t.price === 0);
+              const minPrice = Math.min(...event.ticketTypes.map((t) => t.price));
               return (
                 <Link
                   key={event.id}
@@ -116,9 +108,9 @@ export default async function HomePage() {
                   className="group rounded-xl border border-[var(--color-border)] bg-surface transition-all duration-200 hover:-translate-y-1 hover:shadow-lg hover:shadow-primary/5"
                 >
                   <div className="relative aspect-video overflow-hidden rounded-t-xl bg-surface-elevated">
-                    {event.coverImageUrl ? (
+                    {event.posterObjectKey ? (
                       <img
-                        src={event.coverImageUrl}
+                        src={event.posterObjectKey}
                         alt={event.title}
                         className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
                       />
@@ -133,11 +125,11 @@ export default async function HomePage() {
                       {event.title}
                     </h3>
                     <p className="mt-1 text-sm text-text-secondary">
-                      {event.venueName} &bull; {formatDate(event.startDate)} &bull; {formatTime(event.startTime)}
+                      {event.venueName} &bull; {formatDate(event.startAt)}
                     </p>
                     <div className="mt-3 flex items-center justify-between">
-                      <Badge variant={event.ticketType === 'FREE' ? 'success' : 'primary'} size="sm">
-                        {event.ticketType === 'FREE' ? 'Free' : event.priceAmount ? `$${(event.priceAmount / 100).toFixed(2)}` : 'Free'}
+                      <Badge variant={isFree ? 'success' : 'primary'} size="sm">
+                        {isFree ? 'Free' : `₹${(minPrice / 100).toFixed(0)}`}
                       </Badge>
                       <span className="text-xs text-text-muted">
                         {spotsLeft > 0 ? `${spotsLeft} left` : 'Full'}
@@ -160,7 +152,7 @@ export default async function HomePage() {
         )}
       </section>
 
-      {/* Stats Bar — from real database records */}
+      {/* Stats */}
       <section className="border-t border-[var(--color-border)] bg-surface/50">
         <div className="page-container grid grid-cols-2 gap-8 py-12 sm:grid-cols-4">
           {[
@@ -195,22 +187,6 @@ export default async function HomePage() {
               <p className="mt-2 text-sm text-text-secondary">{step.desc}</p>
             </div>
           ))}
-        </div>
-      </section>
-
-      {/* Testimonial */}
-      <section className="border-t border-[var(--color-border)] py-16">
-        <div className="page-container mx-auto max-w-3xl text-center">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
-            <span className="text-lg">🎸</span>
-          </div>
-          <blockquote className="mt-6 text-xl leading-relaxed text-white">
-            &ldquo;Finally, a platform built for musicians, not corporate events. The check-in is seamless.&rdquo;
-          </blockquote>
-          <div className="mt-4">
-            <p className="text-sm font-medium text-white">Alex R.</p>
-            <p className="text-xs text-text-muted">Drummer, Austin</p>
-          </div>
         </div>
       </section>
 

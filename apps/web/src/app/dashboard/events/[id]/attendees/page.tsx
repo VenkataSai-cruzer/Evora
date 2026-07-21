@@ -9,38 +9,34 @@ import { Badge } from '@/components/ui/Badge';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Skeleton } from '@/components/ui/Skeleton';
 
-interface Attendee {
+interface AttendeeTicket {
   id: string;
   ticketNumber: string;
   status: string;
-  category: string | null;
-  type: string;
-  purchasedAt: string;
+  createdAt: string;
   attendee: {
     id: string;
-    fullName: string;
-    email: string | null;
-    phone: string | null;
-    ticketCategory: string | null;
-    isCheckedIn: boolean;
-    checkedInAt: string | null;
+    attendeeName: string;
+    attendeeEmail: string | null;
+    attendeePhone: string | null;
   } | null;
   order: {
     id: string;
     orderNumber: string;
-    bookingType: string;
-    attendeeCount: number;
     status: string;
   } | null;
   user: {
     id: string;
-    displayName: string;
+    name: string;
     email: string;
+  };
+  ticketType: {
+    id: string;
+    name: string;
   };
 }
 
 const STATUS_STYLES: Record<string, 'success' | 'warning' | 'error' | 'default' | 'primary' | 'outline'> = {
-  VALID: 'success',
   CONFIRMED: 'success',
   CHECKED_IN: 'primary',
   CANCELLED: 'error',
@@ -52,19 +48,17 @@ export default function AttendeesPage() {
   const eventId = params.id as string;
 
   const [isLoading, setIsLoading] = useState(true);
-  const [attendees, setAttendees] = useState<Attendee[]>([]);
+  const [attendees, setAttendees] = useState<AttendeeTicket[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [ticketTypeFilter, setTicketTypeFilter] = useState('');
-  const [bookingModeFilter, setBookingModeFilter] = useState('');
   const [availableTicketTypes, setAvailableTicketTypes] = useState<string[]>([]);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
   const [eventTitle, setEventTitle] = useState('');
 
-  const BOOKING_MODES = ['', 'SOLO', 'DUO', 'TRIO', 'GROUP'];
   const STATUSES = ['', 'CONFIRMED', 'CHECKED_IN', 'CANCELLED', 'EXPIRED'];
 
   const fetchAttendees = useCallback(async () => {
@@ -75,7 +69,6 @@ export default function AttendeesPage() {
       if (search) queryParams.set('search', search);
       if (statusFilter) queryParams.set('status', statusFilter);
       if (ticketTypeFilter) queryParams.set('ticketType', ticketTypeFilter);
-      if (bookingModeFilter) queryParams.set('bookingMode', bookingModeFilter);
       queryParams.set('page', page.toString());
       queryParams.set('limit', '50');
 
@@ -93,7 +86,7 @@ export default function AttendeesPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [eventId, search, statusFilter, ticketTypeFilter, bookingModeFilter, page]);
+  }, [eventId, search, statusFilter, ticketTypeFilter, page]);
 
   const fetchEvent = useCallback(async () => {
     try {
@@ -201,17 +194,6 @@ export default function AttendeesPage() {
             ))}
           </select>
         )}
-
-        <select
-          value={bookingModeFilter}
-          onChange={(e) => { setBookingModeFilter(e.target.value); setPage(1); }}
-          className="rounded-lg border border-[var(--color-border)] bg-surface px-3 py-2.5 text-sm text-white"
-        >
-          <option value="">All Booking Modes</option>
-          {BOOKING_MODES.filter(Boolean).map((m) => (
-            <option key={m} value={m}>{m}</option>
-          ))}
-        </select>
       </div>
 
       {/* Attendee list */}
@@ -219,15 +201,14 @@ export default function AttendeesPage() {
         <EmptyState
           icon="🎫"
           title="No attendees found"
-          description={search || statusFilter || ticketTypeFilter || bookingModeFilter
+          description={search || statusFilter || ticketTypeFilter
             ? 'Try adjusting your filters.'
             : 'No one has registered for this event yet.'}
-          action={search || statusFilter || ticketTypeFilter || bookingModeFilter
+          action={search || statusFilter || ticketTypeFilter
             ? { label: 'Clear Filters', onClick: () => {
                 setSearch('');
                 setStatusFilter('');
                 setTicketTypeFilter('');
-                setBookingModeFilter('');
                 setPage(1);
               }}
             : undefined}
@@ -241,14 +222,14 @@ export default function AttendeesPage() {
             >
               {/* Avatar */}
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary shrink-0">
-                {(ticket.attendee?.fullName || ticket.user.displayName).charAt(0).toUpperCase()}
+                {(ticket.attendee?.attendeeName || ticket.user.name).charAt(0).toUpperCase()}
               </div>
 
               {/* Details */}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <p className="font-medium text-white truncate">
-                    {ticket.attendee?.fullName || ticket.user.displayName}
+                    {ticket.attendee?.attendeeName || ticket.user.name}
                   </p>
                   <Badge
                     variant={STATUS_STYLES[ticket.status] || 'default'}
@@ -258,11 +239,10 @@ export default function AttendeesPage() {
                   </Badge>
                 </div>
                 <div className="mt-0.5 flex flex-wrap gap-x-4 gap-y-1 text-xs text-text-muted">
-                  <span>{ticket.attendee?.email || ticket.user.email}</span>
+                  <span>{ticket.attendee?.attendeeEmail || ticket.user.email}</span>
                   <span className="font-mono">{ticket.ticketNumber}</span>
-                  {ticket.attendee?.ticketCategory && <span>{ticket.attendee.ticketCategory}</span>}
-                  {ticket.order?.bookingType && <span>{ticket.order.bookingType}</span>}
-                  {ticket.attendee?.isCheckedIn && (
+                  <span>{ticket.ticketType.name}</span>
+                  {ticket.status === 'CHECKED_IN' && (
                     <span className="text-primary">✓ Checked in</span>
                   )}
                 </div>

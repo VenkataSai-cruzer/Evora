@@ -4,11 +4,21 @@ import { useEffect, useState } from 'react';
 
 interface TicketPassClientProps {
   ticketNumber: string;
-  qrSecret: string;
-  status: string;
+  attendeeName: string;
+  eventTitle: string;
+  eventDate: string;
+  venueName: string;
+  ticketTypeName: string;
 }
 
-export function TicketPassClient({ ticketNumber, qrSecret, status: _status }: TicketPassClientProps) {
+export function TicketPassClient({
+  ticketNumber,
+  attendeeName,
+  eventTitle,
+  eventDate,
+  venueName,
+  ticketTypeName,
+}: TicketPassClientProps) {
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [isGeneratingQR, setIsGeneratingQR] = useState(true);
 
@@ -19,12 +29,11 @@ export function TicketPassClient({ ticketNumber, qrSecret, status: _status }: Ti
       try {
         const QRCode = (await import('qrcode')).default;
 
-        // Generate verification URL - secure opaque value only
+        // Generate verification URL from ticket number
         const origin = window.location.origin;
         const payload = JSON.stringify({ tn: ticketNumber, ts: Date.now() });
-        // Use btoa for browser-safe base64 encoding
         const encoded = btoa(unescape(encodeURIComponent(payload)));
-        const verifyUrl = `${origin}/verify/${encoded}.${qrSecret.slice(0, 8)}`;
+        const verifyUrl = `${origin}/tickets/${ticketNumber}`;
 
         const url = await QRCode.toDataURL(verifyUrl, {
           width: 400,
@@ -53,7 +62,7 @@ export function TicketPassClient({ ticketNumber, qrSecret, status: _status }: Ti
     return () => {
       cancelled = true;
     };
-  }, [ticketNumber, qrSecret]);
+  }, [ticketNumber]);
 
   if (isGeneratingQR) {
     return (
@@ -67,16 +76,24 @@ export function TicketPassClient({ ticketNumber, qrSecret, status: _status }: Ti
   if (qrDataUrl) {
     return (
       <div className="rounded-xl border border-[var(--color-border)] bg-white p-6 text-center">
+        <div className="mb-3">
+          <p className="text-lg font-bold text-gray-900">{eventTitle}</p>
+          <p className="text-sm text-gray-600">{attendeeName}</p>
+        </div>
         <img
           src={qrDataUrl}
           alt="Event QR Code"
           className="mx-auto h-48 w-48"
           style={{ imageRendering: 'pixelated' }}
         />
-        <p className="mt-3 text-xs text-text-muted font-mono tracking-wider">{ticketNumber}</p>
-        <p className="mt-1 text-xs text-text-muted">
-          Scan this QR at the venue for entry
-        </p>
+        <div className="mt-3 space-y-1">
+          <p className="text-xs text-gray-500">{eventDate}</p>
+          <p className="text-xs text-gray-500">{venueName}</p>
+          <p className="mt-2 text-xs font-mono tracking-wider text-gray-700">{ticketNumber}</p>
+          <p className="mt-1 text-xs text-gray-500">
+            {ticketTypeName}
+          </p>
+        </div>
       </div>
     );
   }

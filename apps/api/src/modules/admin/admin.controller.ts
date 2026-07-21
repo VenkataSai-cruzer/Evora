@@ -4,7 +4,7 @@ import { prisma } from '../../infrastructure/database/prisma.js';
 export class AdminController {
   // ── Events ────────────────────────────────────────────────
 
-  async listEvents(request: FastifyRequest, _reply: FastifyReply) {
+  async listEvents(request: FastifyRequest, _reply1: FastifyReply) {
     const query = request.query as { status?: string; page?: string; limit?: string };
     const page = parseInt(query.page || '1', 10);
     const limit = parseInt(query.limit || '20', 10);
@@ -49,6 +49,9 @@ export class AdminController {
       ticketNumberPrefix?: string;
     };
 
+    // Organizer is required - use authenticated user
+    const organizerId = request.user!.id;
+
     const event = await prisma.event.create({
       data: {
         title: body.title,
@@ -66,6 +69,7 @@ export class AdminController {
         contactPhone: body.contactPhone,
         terms: body.terms,
         ticketNumberPrefix: body.ticketNumberPrefix || '',
+        organizerId,
       },
     });
 
@@ -88,7 +92,7 @@ export class AdminController {
     return { event };
   }
 
-  async updateEvent(request: FastifyRequest, reply: FastifyReply) {
+  async updateEvent(request: FastifyRequest, _reply: FastifyReply) {
     const { id } = request.params as { id: string };
     const body = request.body as Record<string, unknown>;
 
@@ -116,6 +120,8 @@ export class AdminController {
 
     const newSlug = `${source.slug}-copy-${Date.now().toString(36)}`;
 
+    const organizerId = request.user!.id;
+
     const event = await prisma.event.create({
       data: {
         title: `${source.title} (Copy)`,
@@ -134,6 +140,7 @@ export class AdminController {
         contactPhone: source.contactPhone,
         terms: source.terms,
         ticketNumberPrefix: source.ticketNumberPrefix,
+        organizerId,
         // Copy branding
         branding: source.branding
           ? {
@@ -199,7 +206,7 @@ export class AdminController {
 
   // ── Event Lifecycle ───────────────────────────────────────
 
-  async publishEvent(request: FastifyRequest, reply: FastifyReply) {
+  async publishEvent(request: FastifyRequest, _reply: FastifyReply) {
     const { id } = request.params as { id: string };
     const event = await prisma.event.update({
       where: { id },
@@ -208,7 +215,7 @@ export class AdminController {
     return { event };
   }
 
-  async pauseSales(request: FastifyRequest, reply: FastifyReply) {
+  async pauseSales(request: FastifyRequest, _reply: FastifyReply) {
     const { id } = request.params as { id: string };
     const event = await prisma.event.update({
       where: { id },
@@ -217,7 +224,7 @@ export class AdminController {
     return { event };
   }
 
-  async resumeSales(request: FastifyRequest, reply: FastifyReply) {
+  async resumeSales(request: FastifyRequest, _reply: FastifyReply) {
     const { id } = request.params as { id: string };
     const event = await prisma.event.update({
       where: { id },
@@ -226,7 +233,7 @@ export class AdminController {
     return { event };
   }
 
-  async closeSales(request: FastifyRequest, reply: FastifyReply) {
+  async closeSales(request: FastifyRequest, _reply: FastifyReply) {
     const { id } = request.params as { id: string };
     const event = await prisma.event.update({
       where: { id },
@@ -237,7 +244,7 @@ export class AdminController {
 
   // ── Attendees ─────────────────────────────────────────────
 
-  async listAttendees(request: FastifyRequest, _reply: FastifyReply) {
+  async listAttendees(request: FastifyRequest, _reply2: FastifyReply) {
     const { id } = request.params as { id: string };
     const query = request.query as { search?: string; page?: string; limit?: string };
     const page = parseInt(query.page || '1', 10);
@@ -307,7 +314,7 @@ export class AdminController {
 
   // ── Ticket Types ──────────────────────────────────────────
 
-  async listTicketTypes(request: FastifyRequest, _reply: FastifyReply) {
+  async listTicketTypes(request: FastifyRequest, _reply3: FastifyReply) {
     const { id } = request.params as { id: string };
     const types = await prisma.ticketType.findMany({
       where: { eventId: id },
@@ -344,7 +351,7 @@ export class AdminController {
     return reply.status(201).send({ ticketType });
   }
 
-  async updateTicketType(request: FastifyRequest, reply: FastifyReply) {
+  async updateTicketType(request: FastifyRequest, _reply: FastifyReply) {
     const { ticketTypeId } = request.params as { ticketTypeId: string };
     const body = request.body as Record<string, unknown>;
 
@@ -358,7 +365,7 @@ export class AdminController {
 
   // ── Branding ──────────────────────────────────────────────
 
-  async upsertBranding(request: FastifyRequest, reply: FastifyReply) {
+  async upsertBranding(request: FastifyRequest, _reply: FastifyReply) {
     const { id } = request.params as { id: string };
     const body = request.body as {
       venueLogoObjectKey?: string;
@@ -378,7 +385,7 @@ export class AdminController {
 
   // ── Partners ──────────────────────────────────────────────
 
-  async listPartners(request: FastifyRequest, _reply: FastifyReply) {
+  async listPartners(request: FastifyRequest, _reply4: FastifyReply) {
     const { id } = request.params as { id: string };
     const partners = await prisma.eventPartner.findMany({
       where: { eventId: id },
@@ -417,7 +424,7 @@ export class AdminController {
 
   // ── Check-ins ─────────────────────────────────────────────
 
-  async listCheckIns(request: FastifyRequest, _reply: FastifyReply) {
+  async listCheckIns(request: FastifyRequest, _reply5: FastifyReply) {
     const { id } = request.params as { id: string };
     const checkIns = await prisma.checkIn.findMany({
       where: { eventId: id },

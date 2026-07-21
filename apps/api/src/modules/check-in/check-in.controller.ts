@@ -15,7 +15,7 @@ export class CheckInController {
 
     const ticket = await prisma.ticket.findUnique({
       where: { qrTokenHash: tokenHash },
-      include: { event: true, ticketType: true },
+      include: { event: true, ticketType: true, attendee: true },
     });
 
     if (!ticket) {

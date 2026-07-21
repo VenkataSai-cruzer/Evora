@@ -22,29 +22,11 @@ function slugify(text: string): string {
 const createEventSchema = z.object({
   title: z.string().min(2, 'Title must be at least 2 characters').max(200),
   description: z.string().min(10, 'Description must be at least 10 characters').max(10000),
-  coverImageUrl: z.string().url().optional().nullable(),
-  eventLogoUrl: z.string().url().optional().nullable(),
-  edition: z.string().max(50).optional().nullable(),
-  startDate: z.string().min(1, 'Start date is required'),
-  startTime: z.string().min(1, 'Start time is required'),
-  endDate: z.string().optional().nullable(),
-  endTime: z.string().optional().nullable(),
+  startAt: z.string().min(1, 'Start date is required'),
   venueName: z.string().min(2, 'Venue name is required').max(200),
   venueAddress: z.string().min(2, 'Venue address is required').max(500),
-  venueLat: z.number().optional().nullable(),
-  venueLng: z.number().optional().nullable(),
-  capacity: z.number().int().min(1, 'Capacity must be at least 1').max(100000),
-  ticketType: z.enum(['FREE', 'PAID']),
-  price: z.number().min(0).optional().nullable(),
-  instruments: z.string().optional().default('[]'),
-  skillLevel: z.string().optional().default('ALL'),
-  visibility: z.enum(['PUBLIC', 'PRIVATE']).optional().default('PUBLIC'),
-  status: z.enum(['DRAFT', 'PUBLISHED', 'SALES_OPEN', 'SALES_PAUSED', 'SALES_CLOSED', 'SOLD_OUT']).optional().default('DRAFT'),
-  entryGate: z.string().max(100).optional().nullable(),
-  entryInstructions: z.string().max(2000).optional().nullable(),
-  termsUrl: z.string().url().optional().nullable(),
-  upiId: z.string().max(50).optional().nullable(),
-  upiQrCodeUrl: z.string().url().optional().nullable(),
+  totalCapacity: z.number().int().min(1, 'Capacity must be at least 1').max(100000),
+  status: z.enum(['DRAFT', 'PUBLISHED', 'COMPLETED', 'CANCELLED']).optional().default('DRAFT'),
 });
 
 async function checkAuth() {
@@ -53,7 +35,7 @@ async function checkAuth() {
     return { error: 'Unauthorized', status: 401 };
   }
   const role = session.user.role;
-  if (role !== 'ORGANIZER' && role !== 'ADMIN') {
+  if (role !== 'ADMIN') {
     return { error: 'Forbidden', status: 403 };
   }
   return { session };
@@ -74,9 +56,9 @@ export async function GET(request: NextRequest) {
 
     const where: Prisma.EventWhereInput = {};
 
-    // Organizers see their own events; admins see all
-    if (session.user.role === 'ORGANIZER') {
-      where.organizerId = session.user.id;
+    // Admins see all events
+    if (session.user.role === 'ADMIN') {
+      // admins see all events
     }
 
     if (status) {
@@ -95,26 +77,19 @@ export async function GET(request: NextRequest) {
           id: true,
           title: true,
           slug: true,
-          coverImageUrl: true,
-          startDate: true,
-          startTime: true,
-          endDate: true,
+          startAt: true,
           venueName: true,
-          capacity: true,
-          ticketType: true,
-          priceAmount: true,
+          totalCapacity: true,
           status: true,
-          visibility: true,
-          featured: true,
           createdAt: true,
           updatedAt: true,
-          _count: {
-            select: {
-              tickets: true,
-              orders: true,
-              updates: true,
-            },
-          },
+      _count: {
+        select: {
+          tickets: true,
+          orders: true,
+        },
+      },
+          organizerId: true,
         },
       }),
       prisma.event.count({ where }),
@@ -169,29 +144,11 @@ export async function POST(request: NextRequest) {
         title: data.title,
         slug,
         description: data.description,
-        coverImageUrl: data.coverImageUrl || null,
-        eventLogoUrl: data.eventLogoUrl || null,
-        edition: data.edition || null,
-        startDate: new Date(data.startDate),
-        startTime: data.startTime,
-        endDate: data.endDate ? new Date(data.endDate) : null,
-        endTime: data.endTime || null,
+        startAt: new Date(data.startAt),
         venueName: data.venueName,
         venueAddress: data.venueAddress,
-        venueLat: data.venueLat || null,
-        venueLng: data.venueLng || null,
-        capacity: data.capacity,
-        ticketType: data.ticketType,
-        priceAmount: data.ticketType === 'PAID' ? Math.round((data.price ?? 0) * 100) : null,
-        instruments: data.instruments || '[]',
-        skillLevel: data.skillLevel || 'ALL',
-        visibility: data.visibility || 'PUBLIC',
+        totalCapacity: data.totalCapacity,
         status: data.status || 'DRAFT',
-        entryGate: data.entryGate || null,
-        entryInstructions: data.entryInstructions || null,
-        upiId: data.upiId || null,
-        upiQrCodeUrl: data.upiQrCodeUrl || null,
-        termsUrl: data.termsUrl || null,
         organizerId: session.user.id,
       },
       select: {

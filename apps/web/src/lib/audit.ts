@@ -8,6 +8,7 @@ export interface AuditEntry {
   entityType: string;
   entityId: string;
   actorId?: string | null;
+  eventId?: string | null;
   metadata?: Record<string, unknown>;
   ipAddress?: string | null;
   userAgent?: string | null;
@@ -21,9 +22,10 @@ export async function writeAuditLog(entry: AuditEntry): Promise<void> {
         entityType: entry.entityType,
         entityId: entry.entityId,
         actorId: entry.actorId || null,
-        metadata: JSON.stringify(entry.metadata || {}),
+        eventId: entry.eventId || null,
         ipAddress: entry.ipAddress || null,
         userAgent: entry.userAgent || null,
+        metadata: JSON.stringify(entry.metadata || {}),
       },
     });
   } catch (error) {

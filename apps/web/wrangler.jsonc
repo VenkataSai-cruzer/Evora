@@ -1,0 +1,14 @@
+{
+  "name": "seven-notes-staging",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2024-12-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": ".open-next/assets"
+  },
+  "vars": {
+    "NEXT_PUBLIC_API_BASE_URL": "https://seven-notes-api.onrender.com/api/v1",
+    "NEXT_PUBLIC_APP_ENV": "staging",
+    "NEXT_PUBLIC_ENABLE_TEST_PAYMENT": "true"
+  }
+}

@@ -1,0 +1,108 @@
+# Render Blueprint for 7 NOTES Backend API
+# Render Blueprint for 7 NOTES Backend API
+# Deploy to Render: https://render.com/docs/blueprint-spec
+#
+# Services:
+# - seven-notes-api: Node.js backend (Fastify + Prisma)
+#
+# ── Staging vs Production ───────────────────────────────────
+# For staging, change the following:
+#   APP_URL: https://staging.7notes.in
+#   API_URL: https://staging-api.7notes.in
+#   CORS_ORIGIN: https://staging.7notes.in
+#   R2_BUCKET_NAME: seven-notes-staging
+#   Use a separate Supabase staging project
+#
+# Prerequisites:
+# 1. Supabase PostgreSQL database (see .env.example for connection strings)
+# 2. Cloudflare R2 bucket for file storage
+# 3. Resend API key for transactional emails
+
+services:
+  # ── Backend API (Fastify + Prisma) ─────────────────────────
+  - type: web
+    name: seven-notes-api
+    env: node
+    region: singapore  # Closest to primary users (India / Asia)
+    plan: starter      # $7/month — sufficient for staging + low-traffic production
+    rootDir: apps/api
+    buildCommand: |
+      npm install &&
+      npx prisma generate --schema=../../prisma/schema.prisma &&
+      npm run build
+    startCommand: npm run start
+    healthCheckPath: /api/v1/health
+    autoDeploy: true
+    numInstances: 1
+
+    # Run database migrations before each deploy
+    preDeployCommand: npx prisma migrate deploy --schema=../../prisma/schema.prisma
+
+    # ── Environment Variables ────────────────────────────────
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      - key: PORT
+        value: 10000
+
+      - key: HOST
+        value: 0.0.0.0
+
+      # ── Change for staging ────────────────────────────────
+      - key: APP_URL
+        value: https://7notes.in
+        # staging: https://staging.7notes.in
+
+      - key: API_URL
+        value: https://api.7notes.in
+        # staging: https://staging-api.7notes.in
+
+      - key: CORS_ORIGIN
+        value: https://7notes.in
+        # staging: https://staging.7notes.in
+
+      # ── Session & Security ─────────────────────────────────
+      - key: SESSION_SECRET
+        generateValue: true
+
+      - key: CSRF_SECRET
+        generateValue: true
+
+      - key: QR_SECRET
+        generateValue: true
+
+      # ── Supabase PostgreSQL ────────────────────────────────
+      # Create a Supabase project at https://supabase.com
+      # Then copy connection strings from Project Settings > Database
+      - key: DATABASE_URL
+        sync: false
+
+      - key: DIRECT_URL
+        sync: false
+
+      # ── Cloudflare R2 (S3-compatible) ──────────────────────
+      # Create an R2 bucket. Get credentials from R2 > API Tokens
+      - key: R2_ACCOUNT_ID
+        sync: false
+
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+
+      - key: R2_BUCKET_NAME
+        value: seven-notes-production
+        # staging: seven-notes-staging
+
+      - key: R2_ENDPOINT
+        sync: false
+        # Format: https://{ACCOUNT_ID}.r2.cloudflarestorage.com
+
+      # ── Resend (Transactional Email) ───────────────────────
+      - key: RESEND_API_KEY
+        sync: false
+
+      - key: EMAIL_FROM
+        value: 7 NOTES <tickets@7notes.in>

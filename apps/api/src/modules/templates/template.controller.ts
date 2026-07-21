@@ -81,7 +81,7 @@ export class TemplateController {
     return { template: { ...template, fields } };
   }
 
-  async lockTemplate(request: FastifyRequest, reply: FastifyReply) {
+  async lockTemplate(request: FastifyRequest, _reply: FastifyReply) {
     const { templateId } = request.params as { templateId: string };
 
     const template = await prisma.ticketTemplate.update({

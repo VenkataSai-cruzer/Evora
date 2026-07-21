@@ -35,8 +35,7 @@ export default async function DashboardPage() {
         title: true,
         slug: true,
         status: true,
-        startDate: true,
-        ticketType: true,
+        startAt: true,
         _count: { select: { tickets: true } },
       },
     }),
@@ -44,7 +43,7 @@ export default async function DashboardPage() {
       where: { event: { organizerId: userId } },
     }),
     prisma.contactMessage.count({
-      where: { read: false },
+      where: { isRead: false },
     }),
   ]);
 
@@ -130,7 +129,7 @@ export default async function DashboardPage() {
                   <div>
                     <p className="text-sm font-medium text-white">{event.title}</p>
                     <p className="text-xs text-text-muted">
-                      {formatDate(event.startDate)} &bull; {event._count.tickets} tickets
+                      {formatDate(event.startAt)} &bull; {event._count.tickets} tickets
                     </p>
                   </div>
                 </div>

@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { requireAuth, optionalAuth } from '../../middleware/authentication.js';
+import { requireAuth } from '../../middleware/authentication.js';
 import { requireRole } from '../../middleware/authorization.js';
 import { CheckInController } from './check-in.controller.js';
 

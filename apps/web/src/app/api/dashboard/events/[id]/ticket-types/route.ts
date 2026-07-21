@@ -13,16 +13,13 @@ const log = createLogger('api/dashboard/events/[id]/ticket-types');
 const createTicketTypeSchema = z.object({
   name: z.string().min(1, 'Name is required').max(100),
   description: z.string().max(500).optional().nullable(),
-  price: z.number().min(0, 'Price cannot be negative').optional().default(0),
-  currency: z.string().max(10).optional().default('USD'),
-  quantity: z.number().int().min(0, 'Quantity cannot be negative'),
-  saleStart: z.string().optional().nullable(),
-  saleEnd: z.string().optional().nullable(),
-  minPerBooking: z.number().int().min(1).optional().default(1),
-  maxPerBooking: z.number().int().min(1).max(100).optional().default(10),
-  bookingMode: z.enum(['SOLO', 'DUO', 'TRIO', 'GROUP', 'FLEXIBLE']).optional().default('FLEXIBLE'),
-  visibility: z.enum(['PUBLIC', 'PRIVATE']).optional().default('PUBLIC'),
-  status: z.enum(['DRAFT', 'ACTIVE', 'PAUSED', 'CLOSED']).optional().default('DRAFT'),
+  price: z.number().min(0, 'Price cannot be negative').default(0),
+  currency: z.string().max(10).default('INR'),
+  capacity: z.number().int().min(0, 'Capacity cannot be negative'),
+  maxPerOrder: z.number().int().min(1).default(10),
+  active: z.boolean().default(true),
+  saleStartAt: z.string().optional().nullable(),
+  saleEndAt: z.string().optional().nullable(),
 });
 
 async function checkEventAccess(eventId: string) {
@@ -65,28 +62,7 @@ export async function GET(
       orderBy: { createdAt: 'asc' },
     });
 
-    // Compute real sold quantities from tickets
-    const ticketCounts = await prisma.ticket.groupBy({
-      by: ['category'],
-      where: {
-        eventId: params.id,
-        status: { in: ['CONFIRMED', 'CHECKED_IN'] },
-      },
-      _count: true,
-    });
-
-    const soldByCategory = new Map(ticketCounts.map((t) => [t.category, t._count]));
-
-    // Reserve counting — payment integration coming later
-    const reservedByCategory = new Map<string, number>();
-
-    const typesWithCounts = ticketTypes.map((tt) => ({
-      ...tt,
-      soldQty: soldByCategory.get(tt.name) ?? 0,
-      reservedQty: reservedByCategory.get(tt.name) ?? 0,
-    }));
-
-    return NextResponse.json({ ticketTypes: typesWithCounts });
+    return NextResponse.json({ ticketTypes });
   } catch (error) {
     log.error({ error, eventId: params.id }, 'Failed to fetch ticket types');
     return NextResponse.json({ error: 'Failed to load ticket types.' }, { status: 500 });
@@ -113,8 +89,7 @@ export async function POST(
 
     const data = parsed.data;
 
-    // Validate sale window
-    if (data.saleStart && data.saleEnd && new Date(data.saleEnd) <= new Date(data.saleStart)) {
+    if (data.saleStartAt && data.saleEndAt && new Date(data.saleEndAt) <= new Date(data.saleStartAt)) {
       return NextResponse.json(
         { error: 'Sale end must be after sale start.' },
         { status: 400 },
@@ -126,16 +101,13 @@ export async function POST(
         eventId: params.id,
         name: data.name,
         description: data.description || null,
-        priceAmount: Math.round(data.price * 100),
-        currency: data.currency || 'USD',
-        quantity: data.quantity,
-        saleStart: data.saleStart ? new Date(data.saleStart) : null,
-        saleEnd: data.saleEnd ? new Date(data.saleEnd) : null,
-        minPerBooking: data.minPerBooking ?? 1,
-        maxPerBooking: data.maxPerBooking ?? 10,
-        bookingMode: data.bookingMode || 'FLEXIBLE',
-        visibility: data.visibility || 'PUBLIC',
-        status: data.status || 'DRAFT',
+        price: data.price,
+        currency: data.currency,
+        capacity: data.capacity,
+        maxPerOrder: data.maxPerOrder,
+        active: data.active,
+        saleStartAt: data.saleStartAt ? new Date(data.saleStartAt) : null,
+        saleEndAt: data.saleEndAt ? new Date(data.saleEndAt) : null,
       },
     });
 
@@ -144,7 +116,7 @@ export async function POST(
       entityType: 'TicketType',
       entityId: ticketType.id,
       actorId: access.session.user.id,
-      metadata: { eventId: params.id, name: ticketType.name, priceAmount: ticketType.priceAmount, status: ticketType.status },
+      metadata: { eventId: params.id, name: ticketType.name, price: ticketType.price, active: ticketType.active },
       ...getRequestMetadata(request),
     });
 

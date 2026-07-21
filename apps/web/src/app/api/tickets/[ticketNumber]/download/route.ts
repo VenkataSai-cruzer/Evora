@@ -9,7 +9,6 @@ import type { PassData } from '@/lib/pass-generator';
 import { writeAuditLog, getRequestMetadata } from '@/lib/audit';
 
 const log = createLogger('api/tickets/[ticketNumber]/download');
-
 export const dynamic = 'force-dynamic';
 
 export async function GET(
@@ -24,7 +23,6 @@ export async function GET(
 
     const { searchParams } = new URL(request.url);
     const format = searchParams.get('format') || 'html';
-
     if (format !== 'html' && format !== 'pdf' && format !== 'png') {
       return NextResponse.json({ error: 'Invalid format. Use html, pdf, or png.' }, { status: 400 });
     }
@@ -36,24 +34,16 @@ export async function GET(
           select: {
             title: true,
             slug: true,
-            coverImageUrl: true,
-            eventLogoUrl: true,
-            edition: true,
-            startDate: true,
-            startTime: true,
-            endDate: true,
-            endTime: true,
+            posterObjectKey: true,
+            startAt: true,
             venueName: true,
             venueAddress: true,
-            entryGate: true,
-            entryInstructions: true,
-            ticketType: true,
-            priceAmount: true,
-            organizer: { select: { id: true, displayName: true } },
+            organizer: { select: { id: true, name: true } },
           },
         },
-        order: { select: { orderNumber: true, bookingType: true } },
-        attendee: { select: { fullName: true, ticketCategory: true } },
+        order: { select: { orderNumber: true } },
+        attendee: { select: { attendeeName: true } },
+        ticketType: { select: { name: true, price: true } },
       },
     });
 
@@ -61,7 +51,6 @@ export async function GET(
       return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
     }
 
-    // Authorization
     const isPurchaser = ticket.userId === session.user.id;
     const isOrganizer = ticket.event.organizer.id === session.user.id;
     const isAdmin = session.user.role === 'ADMIN';
@@ -70,45 +59,29 @@ export async function GET(
     }
 
     if (ticket.status !== 'CONFIRMED' && ticket.status !== 'CHECKED_IN') {
-      return NextResponse.json(
-        { error: 'Cannot download pass for cancelled or expired tickets.' },
-        { status: 400 },
-      );
+      return NextResponse.json({ error: 'Cannot download pass for cancelled or expired tickets.' }, { status: 400 });
     }
 
-    const eventDate = ticket.event.startDate.toLocaleDateString('en-US', {
+    const eventDate = ticket.event.startAt.toLocaleDateString('en-US', {
       weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
     });
-
-    const [hours, minutes] = (ticket.event.startTime || '00:00').split(':');
-    const hour = parseInt(hours);
-    const eventTime = `${hour % 12 || 12}:${minutes} ${hour >= 12 ? 'PM' : 'AM'}`;
 
     const passData: PassData = {
       eventTitle: ticket.event.title,
       eventSlug: ticket.event.slug,
-      edition: ticket.event.edition,
-      coverImageUrl: ticket.event.coverImageUrl,
-      eventLogoUrl: ticket.event.eventLogoUrl,
       startDate: eventDate,
-      startTime: eventTime,
-      endTime: ticket.event.endTime,
       venueName: ticket.event.venueName,
-      venueAddress: ticket.event.venueAddress,
-      entryGate: ticket.event.entryGate,
-      entryInstructions: ticket.event.entryInstructions,
-      ticketType: ticket.event.ticketType,
-      priceAmount: ticket.event.priceAmount,
-      attendeeName: ticket.attendee?.fullName || 'Attendee',
-      ticketCategory: ticket.attendee?.ticketCategory || ticket.category,
-      bookingType: ticket.order?.bookingType || null,
+      venueAddress: ticket.event.venueAddress || '',
+      attendeeName: ticket.attendee?.attendeeName || 'Attendee',
+      ticketCategory: ticket.ticketType.name,
       orderNumber: ticket.order?.orderNumber || null,
       ticketNumber: ticket.ticketNumber,
-      organizerName: ticket.event.organizer.displayName,
+      organizerName: ticket.event.organizer.name,
       status: ticket.status,
+      ticketType: ticket.ticketType.name,
+      priceAmount: ticket.ticketType.price,
     };
 
-    // Generate pass in requested format
     let result: { data: Uint8Array; contentType: string; filename: string };
 
     if (format === 'pdf') {
@@ -119,26 +92,17 @@ export async function GET(
       result = { data: new Uint8Array(r.buffer), contentType: r.contentType, filename: r.filename };
     } else {
       const html = generatePassHtml(passData);
-      const htmlFilename = `${ticket.event.slug || 'event'}-${ticket.ticketNumber}.html`;
-      result = { data: new Uint8Array(Buffer.from(html, 'utf-8')), contentType: 'text/html; charset=utf-8', filename: htmlFilename };
+      result = { data: new Uint8Array(Buffer.from(html, 'utf-8')), contentType: 'text/html; charset=utf-8', filename: `${ticket.event.slug || 'event'}-${ticket.ticketNumber}.html` };
     }
 
-    // Audit log for download
     await writeAuditLog({
       action: 'PASS_DOWNLOADED',
       entityType: 'Ticket',
       entityId: ticket.id,
       actorId: session.user.id,
-      metadata: {
-        ticketNumber: params.ticketNumber,
-        format,
-        realFormat: format === 'html' || result.contentType !== 'text/html',
-        eventTitle: ticket.event.title,
-      },
+      metadata: { ticketNumber: params.ticketNumber, format, eventTitle: ticket.event.title },
       ...getRequestMetadata(request),
     });
-
-    log.info({ ticketNumber: params.ticketNumber, format }, 'Event pass downloaded');
 
     return new NextResponse(result.data as unknown as BodyInit, {
       headers: {

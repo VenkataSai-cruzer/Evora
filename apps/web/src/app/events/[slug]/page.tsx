@@ -4,7 +4,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Badge } from '@/components/ui/Badge';
 import { RegistrationFlow } from './RegistrationFlow';
-import { parseInstruments, formatTime, formatDateLong, SKILL_LABELS } from '@/lib/prisma-types';
+import { formatDateLong } from '@/lib/prisma-types';
 
 interface EventPageProps {
   params: { slug: string };
@@ -13,12 +13,11 @@ interface EventPageProps {
 export async function generateStaticParams() {
   try {
     const events = await prisma.event.findMany({
-      where: { status: { in: ['PUBLISHED', 'SALES_OPEN'] }, visibility: 'PUBLIC' },
+      where: { status: 'PUBLISHED' },
       select: { slug: true },
     });
-    return events.map((event) => ({ slug: event.slug }));
+    return events.map((e: { slug: string }) => ({ slug: e.slug }));
   } catch {
-    // If DB is unavailable during build, fall back to dynamic rendering
     return [];
   }
 }
@@ -26,15 +25,15 @@ export async function generateStaticParams() {
 export async function generateMetadata({ params }: EventPageProps): Promise<Metadata> {
   const event = await prisma.event.findUnique({
     where: { slug: params.slug },
-    select: { title: true, description: true, coverImageUrl: true },
+    select: { title: true, description: true, posterObjectKey: true },
   });
 
   if (!event) return { title: 'Event Not Found' };
 
   return {
     title: event.title,
-    description: event.description.slice(0, 160),
-    openGraph: event.coverImageUrl ? { images: [event.coverImageUrl] } : undefined,
+    description: event.description?.slice(0, 160) || '',
+    openGraph: event.posterObjectKey ? { images: [event.posterObjectKey] } : undefined,
   };
 }
 
@@ -45,50 +44,57 @@ export default async function EventDetailPage({ params }: EventPageProps) {
       id: true,
       title: true,
       slug: true,
+      shortDescription: true,
       description: true,
-      coverImageUrl: true,
-      startDate: true,
-      startTime: true,
-      endDate: true,
-      endTime: true,
+      posterObjectKey: true,
+      startAt: true,
+      endAt: true,
       venueName: true,
       venueAddress: true,
-      venueLat: true,
-      venueLng: true,
-      capacity: true,
-      ticketType: true,
-      priceAmount: true,
-      upiId: true,
-      upiQrCodeUrl: true,
-      instruments: true,
-      skillLevel: true,
+      mapUrl: true,
+      totalCapacity: true,
       status: true,
-      visibility: true,
+      salesPaused: true,
+      bookingClosed: true,
+      contactEmail: true,
+      contactPhone: true,
+      terms: true,
+      organizerId: true,
       organizer: {
+        select: { id: true, name: true },
+      },
+      ticketTypes: {
+        where: { active: true },
         select: {
           id: true,
-          displayName: true,
-          avatarUrl: true,
-          bio: true,
+          name: true,
+          description: true,
+          price: true,
+          capacity: true,
+          soldCount: true,
+          maxPerOrder: true,
         },
       },
+      branding: { select: { venueLogoObjectKey: true, primaryLogoObjectKey: true } },
+      faqs: { where: { isPublished: true }, orderBy: { sortOrder: 'asc' } },
+      performers: { where: { isPublished: true }, orderBy: { sortOrder: 'asc' } },
       _count: {
         select: {
-          tickets: {              where: { status: { in: ['CONFIRMED', 'CHECKED_IN'] } },
+          tickets: {
+            where: { status: { in: ['CONFIRMED', 'CHECKED_IN'] } },
           },
         },
       },
     },
   });
 
-  if (!event || !['PUBLISHED', 'SALES_OPEN'].includes(event.status) || event.visibility !== 'PUBLIC') {
+  if (!event || event.status !== 'PUBLISHED') {
     notFound();
   }
 
-  const instrumentsList = parseInstruments(event.instruments);
-  const spotsLeft = event.capacity - event._count.tickets;
-  const fillPercent = event.capacity > 0
-    ? Math.round((event._count.tickets / event.capacity) * 100)
+  const spotsLeft = event.totalCapacity - event._count.tickets;
+  const fillPercent = event.totalCapacity > 0
+    ? Math.round((event._count.tickets / event.totalCapacity) * 100)
     : 0;
 
   const capacityColor =
@@ -96,6 +102,9 @@ export default async function EventDetailPage({ params }: EventPageProps) {
     fillPercent >= 80 ? 'bg-warning' :
     fillPercent >= 50 ? 'bg-primary' :
     'bg-success';
+
+  const isFree = event.ticketTypes.some((t) => t.price === 0);
+  const minPrice = Math.min(...event.ticketTypes.map((t) => t.price));
 
   return (
     <div className="page-container py-8">
@@ -110,9 +119,9 @@ export default async function EventDetailPage({ params }: EventPageProps) {
       </Link>
 
       <div className="relative mt-4 aspect-[21/9] overflow-hidden rounded-xl bg-surface-elevated">
-        {event.coverImageUrl ? (
+        {event.posterObjectKey ? (
           <img
-            src={event.coverImageUrl}
+            src={event.posterObjectKey}
             alt={event.title}
             className="h-full w-full object-cover"
           />
@@ -128,12 +137,12 @@ export default async function EventDetailPage({ params }: EventPageProps) {
           <div className="flex items-start justify-between gap-4">
             <div>
               <h1 className="text-3xl font-bold text-white">{event.title}</h1>
+              {event.shortDescription && (
+                <p className="mt-2 text-text-secondary">{event.shortDescription}</p>
+              )}
               <div className="mt-2 flex flex-wrap items-center gap-2">
-                <Badge variant={event.ticketType === 'FREE' ? 'success' : 'primary'} size="md">
-                  {event.ticketType === 'FREE' ? 'Free' : event.priceAmount ? `$${(event.priceAmount / 100).toFixed(2)}` : 'Free'}
-                </Badge>
-                <Badge variant="outline" size="md">
-                  {SKILL_LABELS[event.skillLevel] || event.skillLevel}
+                <Badge variant={isFree ? 'success' : 'primary'} size="md">
+                  {isFree ? 'Free' : `₹${(minPrice / 100).toFixed(0)}`}
                 </Badge>
               </div>
             </div>
@@ -143,11 +152,12 @@ export default async function EventDetailPage({ params }: EventPageProps) {
             <div className="flex items-start gap-3">
               <span className="mt-0.5 text-lg">📅</span>
               <div>
-                <p className="font-medium text-white">{formatDateLong(event.startDate)}</p>
-                <p className="text-sm text-text-secondary">
-                  {formatTime(event.startTime)}
-                  {event.endTime ? ` – ${event.endTime}` : ''}
-                </p>
+                <p className="font-medium text-white">{formatDateLong(event.startAt)}</p>
+                {event.endAt && (
+                  <p className="text-sm text-text-secondary">
+                    Ends: {formatDateLong(event.endAt)}
+                  </p>
+                )}
               </div>
             </div>
             <div className="flex items-start gap-3">
@@ -166,43 +176,64 @@ export default async function EventDetailPage({ params }: EventPageProps) {
             </div>
           </section>
 
-          {instrumentsList.length > 0 && (
+          {event.performers.length > 0 && (
             <section>
-              <h2 className="text-lg font-semibold text-white">Instruments needed</h2>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {instrumentsList.map((inst: string) => (
-                  <Badge key={inst} variant="primary" size="md">
-                    {inst}
-                  </Badge>
+              <h2 className="text-lg font-semibold text-white">Performers</h2>
+              <div className="mt-3 space-y-3">
+                {event.performers.map((performer) => (
+                  <div key={performer.id} className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-sm font-medium text-primary">
+                      {performer.name.charAt(0)}
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-white">{performer.name}</p>
+                      {performer.instrument && (
+                        <p className="text-xs text-text-muted">{performer.instrument}</p>
+                      )}
+                    </div>
+                  </div>
                 ))}
               </div>
             </section>
           )}
 
-          <section className="rounded-xl border border-[var(--color-border)] bg-surface p-4">
-            <h2 className="text-sm font-semibold text-white">Organized by</h2>
-            <div className="mt-3 flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-sm font-medium text-primary">
-                {event.organizer.displayName.charAt(0).toUpperCase()}
+          {event.faqs.length > 0 && (
+            <section>
+              <h2 className="text-lg font-semibold text-white">FAQs</h2>
+              <div className="mt-3 space-y-3">
+                {event.faqs.map((faq) => (
+                  <div key={faq.id} className="rounded-lg border border-[var(--color-border)] bg-surface p-4">
+                    <p className="text-sm font-medium text-white">{faq.question}</p>
+                    <p className="mt-1 text-xs text-text-secondary">{faq.answer}</p>
+                  </div>
+                ))}
               </div>
-              <div>
-                <p className="text-sm font-medium text-white">{event.organizer.displayName}</p>
-                {event.organizer.bio && (
-                  <p className="text-xs text-text-muted">{event.organizer.bio}</p>
-                )}
+            </section>
+          )}
+
+          {event.organizer && (
+            <section className="rounded-xl border border-[var(--color-border)] bg-surface p-4">
+              <h2 className="text-sm font-semibold text-white">Organized by</h2>
+              <div className="mt-3 flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-sm font-medium text-primary">
+                  {event.organizer.name.charAt(0).toUpperCase()}
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-white">{event.organizer.name}</p>
+                </div>
               </div>
-            </div>
-          </section>
+            </section>
+          )}
         </div>
 
         <div className="lg:col-span-1">
           <div className="sticky top-24 rounded-xl border border-[var(--color-border)] bg-surface p-6">
             <div className="text-center">
               <div className="text-2xl font-bold text-white">
-                {event.ticketType === 'FREE' ? 'Free' : event.priceAmount ? `$${(event.priceAmount / 100).toFixed(2)}` : 'Free'}
+                {isFree ? 'Free' : `₹${(minPrice / 100).toFixed(0)}`}
               </div>
               <p className="mt-1 text-sm text-text-secondary">
-                {event.ticketType === 'FREE' ? 'Free entry' : 'per ticket'}
+                {isFree ? 'Free entry' : 'per person'}
               </p>
             </div>
 
@@ -212,7 +243,7 @@ export default async function EventDetailPage({ params }: EventPageProps) {
                   {spotsLeft > 0 ? `${spotsLeft} spots left` : 'Event full'}
                 </span>
                 <span className="text-text-muted">
-                  {event._count.tickets}/{event.capacity}
+                  {event._count.tickets}/{event.totalCapacity}
                 </span>
               </div>
               <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-surface-elevated">
@@ -228,16 +259,20 @@ export default async function EventDetailPage({ params }: EventPageProps) {
                 eventId={event.id}
                 eventSlug={event.slug}
                 eventTitle={event.title}
-                eventDate={formatDateLong(event.startDate)}
-                eventTime={formatTime(event.startTime)}
+                eventDate={formatDateLong(event.startAt)}
                 venueName={event.venueName}
-                venueAddress={event.venueAddress}
-                coverImageUrl={event.coverImageUrl}
-                ticketType={event.ticketType}
-                capacity={event.capacity}
+                venueAddress={event.venueAddress || ''}
+                posterObjectKey={event.posterObjectKey}
                 spotsLeft={spotsLeft}
-                upiId={event.upiId}
-                upiQrCodeUrl={event.upiQrCodeUrl}
+                ticketTypes={event.ticketTypes.map((t) => ({
+                  id: t.id,
+                  name: t.name,
+                  price: t.price,
+                  capacity: t.capacity,
+                  soldCount: t.soldCount,
+                  maxPerOrder: t.maxPerOrder,
+                }))}
+                contactEmail={event.contactEmail}
               />
             </div>
           </div>

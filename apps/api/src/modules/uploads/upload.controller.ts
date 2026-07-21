@@ -2,7 +2,7 @@ import { FastifyRequest, FastifyReply } from 'fastify';
 import { prisma } from '../../infrastructure/database/prisma.js';
 
 export class UploadController {
-  async uploadPoster(request: FastifyRequest, reply: FastifyReply) {
+  async uploadPoster(request: FastifyRequest, _reply: FastifyReply) {
     // R2 storage will be implemented in Phase 12
     // For now, accept objectKey and update the event
     const { eventId } = request.params as { eventId: string };
@@ -16,7 +16,7 @@ export class UploadController {
     return { event };
   }
 
-  async uploadBranding(request: FastifyRequest, reply: FastifyReply) {
+  async uploadBranding(request: FastifyRequest, _reply: FastifyReply) {
     const { eventId } = request.params as { eventId: string };
     const body = request.body as {
       venueLogoObjectKey?: string;

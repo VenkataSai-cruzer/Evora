@@ -6,9 +6,6 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 
-const INSTRUMENTS = ['Guitar', 'Bass', 'Drums', 'Keys', 'Vocals', 'Saxophone', 'Trumpet', 'Violin', 'Percussion', 'Other'];
-const SKILL_LEVELS = ['ALL', 'BEGINNER', 'INTERMEDIATE', 'ADVANCED'];
-
 export default function EditEventPage() {
   const router = useRouter();
   const params = useParams();
@@ -19,29 +16,25 @@ export default function EditEventPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState('');
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  const [selectedInstruments, setSelectedInstruments] = useState<string[]>([]);
 
-  // Form fields
+  // Form fields matching new Event schema
   const [title, setTitle] = useState('');
   const [slug, setSlug] = useState('');
+  const [shortDescription, setShortDescription] = useState('');
   const [description, setDescription] = useState('');
-  const [startDate, setStartDate] = useState('');
-  const [startTime, setStartTime] = useState('19:00');
-  const [endDate, setEndDate] = useState('');
-  const [endTime, setEndTime] = useState('');
+  const [startAt, setStartAt] = useState('');
+  const [endAt, setEndAt] = useState('');
   const [venueName, setVenueName] = useState('');
   const [venueAddress, setVenueAddress] = useState('');
-  const [capacity, setCapacity] = useState('50');
-  const [ticketType, setTicketType] = useState('FREE');
-  const [price, setPrice] = useState('');
-  const [skillLevel, setSkillLevel] = useState('ALL');
-  const [visibility, setVisibility] = useState('PUBLIC');
+  const [mapUrl, setMapUrl] = useState('');
+  const [totalCapacity, setTotalCapacity] = useState('50');
+  const [salesStartAt, setSalesStartAt] = useState('');
+  const [salesEndAt, setSalesEndAt] = useState('');
+  const [contactEmail, setContactEmail] = useState('');
+  const [contactPhone, setContactPhone] = useState('');
+  const [terms, setTerms] = useState('');
+  const [ticketNumberPrefix, setTicketNumberPrefix] = useState('');
   const [status, setStatus] = useState('DRAFT');
-  const [edition, setEdition] = useState('');
-  const [entryGate, setEntryGate] = useState('');
-  const [entryInstructions, setEntryInstructions] = useState('');
-  const [upiId, setUpiId] = useState('');
-  const [upiQrCodeUrl, setUpiQrCodeUrl] = useState('');
 
   useEffect(() => {
     async function loadEvent() {
@@ -53,30 +46,21 @@ export default function EditEventPage() {
 
         setTitle(event.title);
         setSlug(event.slug);
-        setDescription(event.description);
-        setStartDate(event.startDate ? event.startDate.split('T')[0] : '');
-        setStartTime(event.startTime || '19:00');
-        setEndDate(event.endDate ? event.endDate.split('T')[0] : '');
-        setEndTime(event.endTime || '');
+        setShortDescription(event.shortDescription || '');
+        setDescription(event.description || '');
+        setStartAt(event.startAt ? event.startAt.split('T')[0] : '');
+        setEndAt(event.endAt ? event.endAt.split('T')[0] : '');
         setVenueName(event.venueName);
-        setVenueAddress(event.venueAddress);
-        setCapacity(String(event.capacity));
-        setTicketType(event.ticketType);
-        setPrice(event.price ? String(event.price) : '');
-        setSkillLevel(event.skillLevel);
-        setVisibility(event.visibility);
+        setVenueAddress(event.venueAddress || '');
+        setMapUrl(event.mapUrl || '');
+        setTotalCapacity(String(event.totalCapacity));
+        setSalesStartAt(event.salesStartAt ? event.salesStartAt.split('T')[0] : '');
+        setSalesEndAt(event.salesEndAt ? event.salesEndAt.split('T')[0] : '');
+        setContactEmail(event.contactEmail || '');
+        setContactPhone(event.contactPhone || '');
+        setTerms(event.terms || '');
+        setTicketNumberPrefix(event.ticketNumberPrefix || '');
         setStatus(event.status);
-        setEdition(event.edition || '');
-        setEntryGate(event.entryGate || '');
-        setEntryInstructions(event.entryInstructions || '');
-        setUpiId(event.upiId || '');
-        setUpiQrCodeUrl(event.upiQrCodeUrl || '');
-
-        try {
-          setSelectedInstruments(JSON.parse(event.instruments));
-        } catch {
-          setSelectedInstruments([]);
-        }
       } catch {
         setError('Failed to load event');
       } finally {
@@ -86,18 +70,17 @@ export default function EditEventPage() {
     loadEvent();
   }, [eventId]);
 
-  function toggleInstrument(instrument: string) {
-    setSelectedInstruments((prev) =>
-      prev.includes(instrument) ? prev.filter((i) => i !== instrument) : [...prev, instrument],
-    );
-  }
-
   async function handleSave(targetStatus: string) {
     setError('');
     setFieldErrors({});
 
     if (!title || title.length < 2) {
       setFieldErrors({ title: 'Title must be at least 2 characters' });
+      return;
+    }
+
+    if (!startAt) {
+      setFieldErrors({ startAt: 'Start date is required' });
       return;
     }
 
@@ -109,25 +92,21 @@ export default function EditEventPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title,
-          description,
-          startDate,
-          startTime,
-          endDate: endDate || null,
-          endTime: endTime || null,
+          shortDescription: shortDescription || null,
+          description: description || null,
+          startAt: new Date(startAt).toISOString(),
+          endAt: endAt ? new Date(endAt).toISOString() : null,
           venueName,
-          venueAddress,
-          capacity: parseInt(capacity, 10),
-          ticketType,
-          price: ticketType === 'PAID' ? parseFloat(price) : null,
-          instruments: JSON.stringify(selectedInstruments),
-          skillLevel,
-          visibility,
+          venueAddress: venueAddress || null,
+          mapUrl: mapUrl || null,
+          totalCapacity: parseInt(totalCapacity, 10) || 0,
+          salesStartAt: salesStartAt ? new Date(salesStartAt).toISOString() : null,
+          salesEndAt: salesEndAt ? new Date(salesEndAt).toISOString() : null,
+          contactEmail: contactEmail || null,
+          contactPhone: contactPhone || null,
+          terms: terms || null,
+          ticketNumberPrefix: ticketNumberPrefix || null,
           status: targetStatus,
-          edition: edition || null,
-          entryGate: entryGate || null,
-          entryInstructions: entryInstructions || null,
-          upiId: upiId || null,
-          upiQrCodeUrl: upiQrCodeUrl || null,
         }),
       });
 
@@ -196,8 +175,7 @@ export default function EditEventPage() {
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-bold text-white">{title}</h1>
             <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
-              status === 'PUBLISHED' ? 'bg-success/10 text-success' :
-              status === 'SALES_OPEN' ? 'bg-success/10 text-success' :
+              status === 'PUBLISHED' || status === 'SALES_OPEN' ? 'bg-success/10 text-success' :
               status === 'DRAFT' ? 'bg-warning/10 text-warning' :
               status === 'COMPLETED' ? 'bg-primary/10 text-primary' :
               'bg-error/10 text-error'
@@ -209,7 +187,7 @@ export default function EditEventPage() {
           <Button variant="secondary" size="sm" onClick={handleDuplicate}>
             Duplicate
           </Button>
-          {status !== 'CANCELLED' && status !== 'COMPLETED' && status !== 'SALES_CLOSED' && status !== 'SOLD_OUT' && (
+          {status !== 'CANCELLED' && status !== 'COMPLETED' && (
             <Button variant="danger" size="sm" isLoading={isDeleting} onClick={handleCancel}>
               Cancel Event
             </Button>
@@ -237,12 +215,6 @@ export default function EditEventPage() {
         >
           🎫 Manage Tickets
         </Link>
-        <Link
-          href={`/dashboard/events/${eventId}/utr`}
-          className="rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm font-medium text-text-secondary transition-colors hover:bg-surface-hover hover:text-white"
-        >
-          💳 UTR Verification
-        </Link>
       </div>
 
       <form onSubmit={(e) => { e.preventDefault(); handleSave(status); }} className="space-y-6" noValidate>
@@ -250,135 +222,52 @@ export default function EditEventPage() {
         <section className="space-y-4 rounded-xl border border-[var(--color-border)] bg-surface p-6">
           <h2 className="text-sm font-semibold text-white">Basic Information</h2>
           <Input label="Event Title" value={title} onChange={(e) => setTitle(e.target.value)} error={fieldErrors.title} />
+          <Input label="Short Description (optional)" value={shortDescription} onChange={(e) => setShortDescription(e.target.value)} placeholder="A brief tagline for the event" />
           <div className="w-full">
-            <label className="mb-1.5 block text-sm font-medium text-text-secondary">Description</label>
+            <label className="mb-1.5 block text-sm font-medium text-text-secondary">Full Description (optional)</label>
             <textarea rows={5} value={description} onChange={(e) => setDescription(e.target.value)}
               className="w-full rounded-lg border border-[var(--color-border)] bg-surface px-3 py-2.5 text-sm text-white placeholder:text-text-muted transition-all focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              placeholder="Detailed description of the event..."
             />
           </div>
-          <Input label="Edition (optional)" placeholder="e.g., Vol. 1, Summer 2026" value={edition} onChange={(e) => setEdition(e.target.value)} />
+          <Input label="Ticket Number Prefix" placeholder="e.g., 7N-2026-HYD-" value={ticketNumberPrefix} onChange={(e) => setTicketNumberPrefix(e.target.value)} />
         </section>
 
         {/* Date & Venue */}
         <section className="space-y-4 rounded-xl border border-[var(--color-border)] bg-surface p-6">
           <h2 className="text-sm font-semibold text-white">Date & Venue</h2>
           <div className="grid gap-4 sm:grid-cols-2">
-            <Input label="Start Date" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-            <Input label="Start Time" type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} />
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Input label="End Date (optional)" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
-            <Input label="End Time (optional)" type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} />
+            <Input label="Start Date & Time" type="date" value={startAt} onChange={(e) => setStartAt(e.target.value)} error={fieldErrors.startAt} />
+            <Input label="End Date & Time (optional)" type="date" value={endAt} onChange={(e) => setEndAt(e.target.value)} />
           </div>
           <Input label="Venue Name" value={venueName} onChange={(e) => setVenueName(e.target.value)} />
-          <Input label="Venue Address" value={venueAddress} onChange={(e) => setVenueAddress(e.target.value)} />
-          <Input label="Entry Gate (optional)" placeholder="e.g., Main Entrance, Gate B" value={entryGate} onChange={(e) => setEntryGate(e.target.value)} />
+          <Input label="Venue Address (optional)" value={venueAddress} onChange={(e) => setVenueAddress(e.target.value)} />
+          <Input label="Google Maps URL (optional)" value={mapUrl} onChange={(e) => setMapUrl(e.target.value)} placeholder="https://maps.google.com/..." />
+        </section>
+
+        {/* Capacity & Sales */}
+        <section className="space-y-4 rounded-xl border border-[var(--color-border)] bg-surface p-6">
+          <h2 className="text-sm font-semibold text-white">Capacity & Sales</h2>
+          <Input label="Total Capacity" type="number" min={1} value={totalCapacity} onChange={(e) => setTotalCapacity(e.target.value)} />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Input label="Sales Start (optional)" type="date" value={salesStartAt} onChange={(e) => setSalesStartAt(e.target.value)} />
+            <Input label="Sales End (optional)" type="date" value={salesEndAt} onChange={(e) => setSalesEndAt(e.target.value)} />
+          </div>
+        </section>
+
+        {/* Contact */}
+        <section className="space-y-4 rounded-xl border border-[var(--color-border)] bg-surface p-6">
+          <h2 className="text-sm font-semibold text-white">Contact & Terms</h2>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Input label="Contact Email (optional)" type="email" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} placeholder="support@example.com" />
+            <Input label="Contact Phone (optional)" value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} />
+          </div>
           <div className="w-full">
-            <label className="mb-1.5 block text-sm font-medium text-text-secondary">Entry Instructions (optional)</label>
-            <textarea rows={3} value={entryInstructions} onChange={(e) => setEntryInstructions(e.target.value)}
+            <label className="mb-1.5 block text-sm font-medium text-text-secondary">Terms & Conditions (optional)</label>
+            <textarea rows={4} value={terms} onChange={(e) => setTerms(e.target.value)}
               className="w-full rounded-lg border border-[var(--color-border)] bg-surface px-3 py-2.5 text-sm text-white placeholder:text-text-muted transition-all focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-              placeholder="Instructions for attendees on event day..."
+              placeholder="Event terms and conditions..."
             />
-          </div>
-        </section>
-
-        {/* Capacity & Tickets */}
-        <section className="space-y-4 rounded-xl border border-[var(--color-border)] bg-surface p-6">
-          <h2 className="text-sm font-semibold text-white">Capacity & Tickets</h2>
-          <Input label="Maximum Capacity" type="number" min={1} value={capacity} onChange={(e) => setCapacity(e.target.value)} />
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-text-secondary">Ticket Type</label>
-            <div className="flex gap-2">
-              {['FREE', 'PAID'].map((type) => (
-                <button key={type} type="button" onClick={() => setTicketType(type)}
-                  className={`rounded-lg border px-4 py-2 text-sm font-medium transition-colors ${
-                    ticketType === type ? 'border-primary bg-primary/10 text-primary' : 'border-[var(--color-border)] text-text-secondary'
-                  }`}
-                >{type === 'FREE' ? 'Free Entry' : 'Paid Ticket'}</button>
-              ))}
-            </div>
-          </div>
-          {ticketType === 'PAID' && (
-            <>
-              <Input label="Price (USD)" type="number" min={0} step={0.01} value={price} onChange={(e) => setPrice(e.target.value)} />
-              <div className="rounded-lg border border-primary/10 bg-primary/[0.02] p-4">
-                <h3 className="mb-3 text-sm font-semibold text-white">💳 UPI Payment Details</h3>
-                <p className="mb-3 text-xs text-text-muted">
-                  Add your UPI ID so attendees know where to send payments. The UPI details will be shown on the event registration page.
-                </p>
-                <div className="space-y-3">
-                  <Input
-                    label="UPI ID"
-                    placeholder="e.g., organizer@paytm or organizer@upi"
-                    value={upiId}
-                    onChange={(e) => setUpiId(e.target.value)}
-                  />
-                  <Input
-                    label="QR Code Image URL (optional)"
-                    placeholder="https://example.com/qr-code.png"
-                    value={upiQrCodeUrl}
-                    onChange={(e) => setUpiQrCodeUrl(e.target.value)}
-                  />
-                  {upiQrCodeUrl && (
-                    <div className="mt-2">
-                      <p className="mb-1 text-xs text-text-muted">Preview:</p>
-                      <img
-                        src={upiQrCodeUrl}
-                        alt="UPI QR Code"
-                        className="h-24 w-24 rounded-lg border border-[var(--color-border)] object-contain"
-                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                      />
-                    </div>
-                  )}
-                </div>
-              </div>
-            </>
-          )}
-        </section>
-
-        {/* Music Details */}
-        <section className="space-y-4 rounded-xl border border-[var(--color-border)] bg-surface p-6">
-          <h2 className="text-sm font-semibold text-white">Music Details</h2>
-          <div>
-            <label className="mb-2 text-sm font-medium text-text-secondary">Instruments Needed</label>
-            <div className="flex flex-wrap gap-2">
-              {INSTRUMENTS.map((inst) => (
-                <button key={inst} type="button" onClick={() => toggleInstrument(inst)}
-                  className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-all ${
-                    selectedInstruments.includes(inst) ? 'border-primary bg-primary/10 text-primary' : 'border-[var(--color-border)] text-text-secondary'
-                  }`}
-                >{inst}</button>
-              ))}
-            </div>
-          </div>
-          <div>
-            <label className="mb-2 text-sm font-medium text-text-secondary">Skill Level</label>
-            <div className="flex flex-wrap gap-2">
-              {SKILL_LEVELS.map((level) => (
-                <button key={level} type="button" onClick={() => setSkillLevel(level)}
-                  className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-all ${
-                    skillLevel === level ? 'border-primary bg-primary/10 text-primary' : 'border-[var(--color-border)] text-text-secondary'
-                  }`}
-                >{level === 'ALL' ? 'All Levels' : level.charAt(0) + level.slice(1).toLowerCase()}</button>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {/* Publishing */}
-        <section className="space-y-4 rounded-xl border border-[var(--color-border)] bg-surface p-6">
-          <h2 className="text-sm font-semibold text-white">Publishing</h2>
-          <div>
-            <label className="mb-2 text-sm font-medium text-text-secondary">Visibility</label>
-            <div className="flex gap-2">
-              {[{ value: 'PUBLIC', label: 'Public' }, { value: 'PRIVATE', label: 'Private' }].map((opt) => (
-                <button key={opt.value} type="button" onClick={() => setVisibility(opt.value)}
-                  className={`rounded-lg border px-4 py-2 text-sm font-medium transition-colors ${
-                    visibility === opt.value ? 'border-primary bg-primary/10 text-primary' : 'border-[var(--color-border)] text-text-secondary'
-                  }`}
-                >{opt.label}</button>
-              ))}
-            </div>
           </div>
         </section>
 
@@ -392,22 +281,12 @@ export default function EditEventPage() {
               className="rounded-lg bg-success px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-success/90"
             >Publish Event</button>
           )}
-          {(status === 'PUBLISHED' || status === 'SALES_OPEN') && (
-            <button type="button" onClick={() => handleSave('SALES_PAUSED')}
-              className="rounded-lg border border-[var(--color-border)] px-6 py-2.5 text-sm font-medium text-text-secondary transition-colors hover:bg-surface-hover"
-            >Pause Sales</button>
-          )}
-          {status === 'SALES_PAUSED' && (
-            <button type="button" onClick={() => handleSave('SALES_OPEN')}
-              className="rounded-lg border border-[var(--color-border)] px-6 py-2.5 text-sm font-medium text-text-secondary transition-colors hover:bg-surface-hover"
-            >Resume Sales</button>
-          )}
-          {(status === 'PUBLISHED' || status === 'SALES_OPEN') && (
+          {(status === 'PUBLISHED') && (
             <button type="button" onClick={() => handleSave('DRAFT')}
               className="rounded-lg border border-[var(--color-border)] px-6 py-2.5 text-sm font-medium text-text-secondary transition-colors hover:bg-surface-hover"
             >Unpublish</button>
           )}
-          {(status === 'PUBLISHED' || status === 'SALES_OPEN') && (
+          {(status === 'PUBLISHED') && (
             <button type="button" onClick={() => handleSave('COMPLETED')}
               className="rounded-lg border border-[var(--color-border)] px-6 py-2.5 text-sm font-medium text-text-secondary transition-colors hover:bg-surface-hover"
             >Mark Completed</button>

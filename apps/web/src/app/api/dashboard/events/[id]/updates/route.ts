@@ -43,7 +43,7 @@ export async function GET(
       where: { eventId: params.id },
       orderBy: { publishedAt: 'desc' },
       take: 50,
-      include: { author: { select: { id: true, displayName: true } } },
+      include: { author: { select: { id: true, name: true } } },
     });
     return NextResponse.json({ updates });
   } catch (error) {

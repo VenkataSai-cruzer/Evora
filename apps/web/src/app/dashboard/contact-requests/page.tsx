@@ -12,16 +12,14 @@ interface ContactRequestsPageProps {
 export default async function ContactRequestsPage({ searchParams }: ContactRequestsPageProps) {
   const session = await getServerSession(authOptions);
   if (!session?.user) redirect('/auth/login?callbackUrl=/dashboard/contact-requests');
-  if (session.user.role !== 'ORGANIZER' && session.user.role !== 'ADMIN') redirect('/');
+  if (session.user.role !== 'ADMIN') redirect('/');
 
-  const categoryFilter = typeof searchParams.category === 'string' ? searchParams.category : '';
   const statusFilter = typeof searchParams.status === 'string' ? searchParams.status : '';
   const search = typeof searchParams.q === 'string' ? searchParams.q : '';
 
   const where: Record<string, unknown> = {};
-  if (categoryFilter) where.category = categoryFilter;
-  if (statusFilter === 'read') where.read = true;
-  if (statusFilter === 'unread') where.read = false;
+  if (statusFilter === 'read') where.isRead = true;
+  if (statusFilter === 'unread') where.isRead = false;
   if (search) {
     where.OR = [
       { name: { contains: search } },
@@ -37,7 +35,7 @@ export default async function ContactRequestsPage({ searchParams }: ContactReque
   });
 
   const total = await prisma.contactMessage.count();
-  const unread = await prisma.contactMessage.count({ where: { read: false } });
+  const unread = await prisma.contactMessage.count({ where: { isRead: false } });
 
   return (
     <div className="space-y-6">
@@ -58,36 +56,16 @@ export default async function ContactRequestsPage({ searchParams }: ContactReque
           onChange={(e) => {
             const params = new URLSearchParams();
             if (e.target.value) params.set('q', e.target.value);
-            if (categoryFilter) params.set('category', categoryFilter);
             if (statusFilter) params.set('status', statusFilter);
             window.location.href = `/dashboard/contact-requests?${params.toString()}`;
           }}
         />
         <select
           className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm"
-          defaultValue={categoryFilter}
-          onChange={(e) => {
-            const params = new URLSearchParams();
-            if (e.target.value) params.set('category', e.target.value);
-            if (statusFilter) params.set('status', statusFilter);
-            if (search) params.set('q', search);
-            window.location.href = `/dashboard/contact-requests?${params.toString()}`;
-          }}
-        >
-          <option value="">All Categories</option>
-          <option value="GENERAL">General</option>
-          <option value="EVENT_SUPPORT">Event Support</option>
-          <option value="TICKET_SUPPORT">Ticket Support</option>
-          <option value="VENUE_QUESTION">Venue Question</option>
-          <option value="ORGANIZER_CONTACT">Organizer Contact</option>
-        </select>
-        <select
-          className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm"
           defaultValue={statusFilter}
           onChange={(e) => {
             const params = new URLSearchParams();
             if (e.target.value) params.set('status', e.target.value);
-            if (categoryFilter) params.set('category', categoryFilter);
             if (search) params.set('q', search);
             window.location.href = `/dashboard/contact-requests?${params.toString()}`;
           }}
@@ -100,7 +78,7 @@ export default async function ContactRequestsPage({ searchParams }: ContactReque
 
       {/* Messages */}
       {messages.length === 0 ? (
-        <EmptyState icon="📬" title="No messages found" description={search || categoryFilter ? 'Try different filters.' : 'No contact requests yet.'} />
+        <EmptyState icon="📬" title="No messages found" description={search || statusFilter ? 'Try different filters.' : 'No contact requests yet.'} />
       ) : (
         <div className="space-y-2">
           {messages.map((msg) => (
@@ -108,10 +86,8 @@ export default async function ContactRequestsPage({ searchParams }: ContactReque
               <div className="flex items-start justify-between">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    {!msg.read && <span className="w-2 h-2 rounded-full bg-indigo-500" />}
+                    {!msg.isRead && <span className="w-2 h-2 rounded-full bg-indigo-500" />}
                     <h3 className="text-sm font-medium text-white truncate">{msg.subject}</h3>
-                    {msg.category && <Badge variant="primary" size="sm">{msg.category.replace(/_/g, ' ')}</Badge>}
-                    {msg.eventId && <Badge variant="outline" size="sm">Event</Badge>}
                   </div>
                   <p className="mt-1 text-sm text-gray-400 line-clamp-2">{msg.message}</p>
                   <div className="flex items-center gap-3 mt-2 text-xs text-gray-500">

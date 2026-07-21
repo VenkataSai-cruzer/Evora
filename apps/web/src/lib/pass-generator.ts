@@ -1,15 +1,5 @@
 /**
  * Event pass rendering helpers.
- *
- * The current approach generates a data URL for the pass as an HTML canvas
- * render, which can be saved as PNG by the browser. Future iterations can
- * use server-side Puppeteer/Playwright or a library like jspdf/puppeteer
- * for real PDF generation.
- *
- * For V1, we provide high-quality HTML that the browser prints/saves as PDF.
- * A dedicated PDF library (e.g., pdf-lib, puppeteer) will be added when
- * server-side PDF generation is required for email attachments or bulk
- * processing.
  */
 
 import { formatDisplayPrice } from './qr';
@@ -17,25 +7,17 @@ import { formatDisplayPrice } from './qr';
 export interface PassData {
   eventTitle: string;
   eventSlug: string;
-  edition: string | null;
-  coverImageUrl: string | null;
-  eventLogoUrl: string | null;
   startDate: string;
-  startTime: string;
-  endTime: string | null;
   venueName: string;
   venueAddress: string;
-  entryGate: string | null;
-  entryInstructions: string | null;
-  ticketType: string;
-  priceAmount: number | null;
   attendeeName: string;
   ticketCategory: string | null;
-  bookingType: string | null;
   orderNumber: string | null;
   ticketNumber: string;
   organizerName: string;
   status: string;
+  ticketType: string;
+  priceAmount: number | null;
 }
 
 /**
@@ -56,8 +38,6 @@ export function generatePassFilename(
 
 /**
  * Generate the HTML content for an event pass.
- * The browser can print this as PDF (Ctrl+P, Save as PDF) or
- * the user can take a screenshot for PNG.
  */
 export function generatePassHtml(data: PassData): string {
   const eventDate = data.startDate;
@@ -105,12 +85,6 @@ export function generatePassHtml(data: PassData): string {
     font-weight: 800;
     color: #fff;
     letter-spacing: -0.3px;
-  }
-  .header .edition {
-    font-size: 11px;
-    color: #7C3AED;
-    font-weight: 600;
-    margin-top: 3px;
   }
   .header .price {
     font-size: 13px;
@@ -185,15 +159,6 @@ export function generatePassHtml(data: PassData): string {
     margin-top: 10px;
     font-style: italic;
   }
-  .entry-note {
-    margin-top: 12px;
-    padding: 10px;
-    background: rgba(124, 58, 237, 0.08);
-    border-radius: 8px;
-    font-size: 11px;
-    color: #C4B5FD;
-    line-height: 1.4;
-  }
   .pending-warning {
     background: rgba(245, 158, 11, 0.15);
     color: #F59E0B;
@@ -223,9 +188,7 @@ export function generatePassHtml(data: PassData): string {
 <body>
 <div class="pass">
   <div class="header">
-    ${data.eventLogoUrl ? `<img src="${escapeHtml(data.eventLogoUrl)}" style="height:28px;margin-bottom:6px;" alt=""/>` : ''}
     <div class="event-name">${escapeHtml(data.eventTitle)}</div>
-    ${data.edition ? `<div class="edition">${escapeHtml(data.edition)}</div>` : ''}
     <div class="price">${priceDisplay}</div>
   </div>
   <div class="body">
@@ -239,10 +202,6 @@ export function generatePassHtml(data: PassData): string {
       <span class="detail-value">${eventDate}</span>
     </div>
     <div class="detail-row">
-      <span class="detail-label">Time</span>
-      <span class="detail-value">${escapeHtml(data.startTime)}${data.endTime ? ` – ${escapeHtml(data.endTime)}` : ''}</span>
-    </div>
-    <div class="detail-row">
       <span class="detail-label">Venue</span>
       <span class="detail-value">${escapeHtml(data.venueName)}</span>
     </div>
@@ -250,8 +209,6 @@ export function generatePassHtml(data: PassData): string {
       <span class="detail-label">Address</span>
       <span class="detail-value">${escapeHtml(data.venueAddress)}</span>
     </div>
-    ${data.entryGate ? `<div class="detail-row"><span class="detail-label">Gate</span><span class="detail-value">${escapeHtml(data.entryGate)}</span></div>` : ''}
-    ${data.bookingType ? `<div class="detail-row"><span class="detail-label">Booking</span><span class="detail-value">${escapeHtml(data.bookingType)}</span></div>` : ''}
     ${data.orderNumber ? `<div class="detail-row"><span class="detail-label">Order</span><span class="detail-value" style="font-family:monospace;">${escapeHtml(data.orderNumber)}</span></div>` : ''}
     <div class="detail-row">
       <span class="detail-label">Ticket</span>
@@ -268,8 +225,6 @@ export function generatePassHtml(data: PassData): string {
   <div class="no-qr">
     ${data.status === 'CANCELLED' ? 'Ticket Cancelled' : data.status === 'EXPIRED' ? 'Ticket Expired' : 'QR not available'}
   </div>`}
-
-  ${data.entryInstructions ? `<div class="qr-area"><div class="entry-note">📋 ${escapeHtml(data.entryInstructions)}</div></div>` : ''}
 
   <div style="padding: 8px 16px; text-align: center; font-size: 10px; color: #F59E0B; border-top: 1px solid rgba(255,255,255,0.05);">
     Tickets are non-refundable and non-transferable once confirmed.

@@ -38,11 +38,9 @@ export default async function OrganizerEventsPage({ searchParams }: EventsPagePr
         id: true,
         title: true,
         slug: true,
-        startDate: true,
+        startAt: true,
         venueName: true,
         status: true,
-        ticketType: true,
-        capacity: true,
         createdAt: true,
         _count: {
           select: {
@@ -124,15 +122,11 @@ export default async function OrganizerEventsPage({ searchParams }: EventsPagePr
                   </span>
                 </div>
                 <p className="mt-1 text-xs text-text-muted">
-                  {event.venueName} &bull; {formatDate(event.startDate)} &bull; {event._count.tickets} tickets &bull; {event._count.orders} orders
+                  {event.venueName} &bull; {formatDate(event.startAt)} &bull; {event._count.tickets} tickets &bull; {event._count.orders} orders
                 </p>
               </div>
               <div className="flex items-center gap-2 ml-4">
-                {event.ticketType === 'FREE' ? (
-                  <span className="text-xs text-success">Free</span>
-                ) : (
-                  <span className="text-xs text-primary">Paid</span>
-                )}
+                <span className={`text-xs ${event.status === 'PUBLISHED' || event.status === 'SALES_OPEN' ? 'text-success' : 'text-text-muted'}`}>{event.status}</span>
                 <svg className="h-4 w-4 text-text-muted" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
                 </svg>
