@@ -1,22 +1,15 @@
-export const dynamic = 'force-dynamic';
+'use client';
 
+import { useEffect, useState } from 'react';
 import { notFound } from 'next/navigation';
-import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Badge } from '@/components/ui/Badge';
+import { AuthGuard } from '@/components/AuthGuard';
+import { useAuth } from '@/lib/auth-provider';
 import { formatDate } from '@/lib/dates';
-import { requireAuth } from '@/lib/auth';
 import { getTicket } from '@/lib/api-client';
 import { TicketPassClient } from './TicketPassClient';
-
-interface PageProps {
-  params: { ticketNumber: string };
-}
-
-export const metadata: Metadata = {
-  title: 'Event Pass',
-  description: 'View your event ticket and pass.',
-};
+import type { TicketDetailResponse } from '@/lib/api-client';
 
 const STATUS_STYLES: Record<string, { variant: 'success' | 'warning' | 'error' | 'default' | 'primary' | 'outline'; label: string }> = {
   CONFIRMED: { variant: 'success', label: 'Confirmed' },
@@ -25,32 +18,70 @@ const STATUS_STYLES: Record<string, { variant: 'success' | 'warning' | 'error' |
   EXPIRED: { variant: 'default', label: 'Expired' },
 };
 
-export default async function TicketDetailPage({ params }: PageProps) {
-  const session = await requireAuth(`/tickets/${params.ticketNumber}`);
+interface PageProps {
+  params: { ticketNumber: string };
+}
 
-  let ticket;
-  try {
-    ticket = await getTicket(params.ticketNumber);
-  } catch {
-    notFound();
+export default function TicketDetailPage({ params }: PageProps) {
+  return (
+    <AuthGuard>
+      <TicketDetailContent ticketNumber={params.ticketNumber} />
+    </AuthGuard>
+  );
+}
+
+function TicketDetailContent({ ticketNumber }: { ticketNumber: string }) {
+  const { user } = useAuth();
+  const [ticket, setTicket] = useState<TicketDetailResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [notFoundState, setNotFound] = useState(false);
+
+  useEffect(() => {
+    if (!user) return;
+    const uid = user.id;
+    const urole = user.role;
+
+    async function load() {
+      try {
+        const data = await getTicket(ticketNumber);
+        if (!data) {
+          setNotFound(true);
+          return;
+        }
+        const isOwner = data.userId === uid;
+        const isOrganizer = data.event.organizerId === uid;
+        const isAdmin = urole === 'ADMIN';
+        if (!isOwner && !isOrganizer && !isAdmin) {
+          setNotFound(true);
+          return;
+        }
+        setTicket(data);
+      } catch {
+        setNotFound(true);
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  }, [ticketNumber, user]);
+
+  if (loading) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <div className="animate-pulse space-y-4">
+          <div className="h-8 w-48 rounded bg-surface-elevated" />
+          <div className="h-4 w-32 rounded bg-surface-elevated" />
+        </div>
+      </div>
+    );
   }
 
-  if (!ticket) {
+  if (notFoundState || !ticket) {
     notFound();
-  }
-
-  const isPurchaser = ticket.userId === session.id;
-  const isOrganizer = ticket.event.organizerId === session.id;
-  const isAdmin = session.role === 'ADMIN';
-  const isAttendee = ticket.attendee?.attendeeEmail === session.email;
-
-  if (!isPurchaser && !isOrganizer && !isAdmin && !isAttendee) {
-    notFound();
+    return null;
   }
 
   const statusStyle = STATUS_STYLES[ticket.status] || { variant: 'default' as const, label: ticket.status };
-  const canViewQR = (ticket.status === 'CONFIRMED' || ticket.status === 'CHECKED_IN')
-    && (isPurchaser || isOrganizer || isAdmin);
   const displayPrice = ticket.ticketType?.price === 0 ? 'Free' : `₹${((ticket.ticketType?.price || 0) / 100).toFixed(0)}`;
 
   return (
@@ -122,7 +153,7 @@ export default async function TicketDetailPage({ params }: PageProps) {
               <p className="mt-0.5 text-sm font-medium text-white">{ticket.event.organizer?.name || 'Unknown'}</p>
             </div>
 
-            {canViewQR && (
+            {(ticket.status === 'CONFIRMED' || ticket.status === 'CHECKED_IN') && (
               <TicketPassClient
                 ticketNumber={ticket.ticketNumber}
                 attendeeName={ticket.attendee?.attendeeName || ticket.user.name}

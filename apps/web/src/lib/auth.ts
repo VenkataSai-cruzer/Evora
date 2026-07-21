@@ -1,53 +1,43 @@
 /**
- * Centralized server-side auth module.
+ * Server-side auth helpers.
  *
- * This is the ONLY way server components should check authentication.
- * Client components use useAuth() from auth-provider.tsx.
+ * These functions fetch the session but do NOT redirect — server-side
+ * redirect() from next/navigation doesn't work reliably in Cloudflare
+ * Workers/OpenNext. Client-side auth redirect is handled by the AuthGuard
+ * component (components/AuthGuard.tsx).
  *
- * Both call the same getSession() API — session is the single source of truth,
- * viewed from two contexts (server render + client hydration).
- *
- * Usage (server component):
- *   const user = await requireAuth();        // redirects to login if no session
- *   const admin = await requireRole('ADMIN'); // redirects to /dashboard if not admin
+ * Usage:
+ *   const user = await requireAuth();    // returns SessionUser | null
+ *   const admin = await requireRole('ADMIN'); // returns SessionUser | null (null if wrong role)
  */
-import { redirect } from 'next/navigation';
 import { getSession, type SessionUser } from './api-client';
 
 export type { SessionUser };
 
 /**
- * Require authentication. Redirects to login if no valid session exists.
- * Returns the session user on success.
+ * Get the current session. Returns null if not authenticated.
+ * AuthGuard handles client-side redirect for unauthenticated users.
  */
-export async function requireAuth(callbackPath?: string): Promise<SessionUser> {
-  const session = await getSession();
-  if (!session) {
-    const callback = callbackPath ? `?callbackUrl=${encodeURIComponent(callbackPath)}` : '';
-    redirect(`/auth/login${callback}`);
+export async function requireAuth(): Promise<SessionUser | null> {
+  try {
+    return await getSession();
+  } catch {
+    return null;
   }
-  return session;
 }
 
 /**
- * Require a specific role. Redirects to login if unauthenticated,
- * or to /dashboard if the user doesn't have the required role.
+ * Get the current session and check role. Returns null if not authenticated
+ * or if the user doesn't have the required role.
+ * AuthGuard handles client-side redirect for unauthorized users.
  */
-export async function requireRole(
-  ...roles: string[]
-): Promise<SessionUser> {
-  const session = await requireAuth();
-  if (!roles.includes(session.role)) {
-    redirect('/');
+export async function requireRole(...roles: string[]): Promise<SessionUser | null> {
+  try {
+    const session = await getSession();
+    if (!session) return null;
+    if (!roles.includes(session.role)) return null;
+    return session;
+  } catch {
+    return null;
   }
-  return session;
-}
-
-/**
- * Get the current session without redirecting.
- * Same as getSession() from api-client, but provided here so all
- * server-side auth checks come from one module.
- */
-export async function getServerSession(): Promise<SessionUser | null> {
-  return getSession();
 }

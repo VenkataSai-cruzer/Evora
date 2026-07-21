@@ -10,7 +10,7 @@ interface EventsPageProps {
 }
 
 export default async function OrganizerEventsPage({ searchParams }: EventsPageProps) {
-  await requireAuth('/dashboard/events');
+  await requireAuth();
 
   const statusFilter = typeof searchParams.status === 'string' ? searchParams.status : '';
   const page = Math.max(1, typeof searchParams.page === 'string' ? parseInt(searchParams.page, 10) : 1);

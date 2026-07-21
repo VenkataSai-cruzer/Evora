@@ -6,7 +6,8 @@ import { requireAuth } from '@/lib/auth';
 import { getDashboardStats } from '@/lib/api-client';
 
 export default async function DashboardPage() {
-  const session = await requireAuth('/dashboard');
+  const session = await requireAuth();
+  if (!session) return null;
 
   const stats = await getDashboardStats(session.id);
 
