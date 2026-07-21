@@ -1,31 +1,7 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { prisma } from '../../infrastructure/database/prisma.js';
-import { seedStagingData } from './seed.js';
 
 export class AdminController {
-  // ── Seed ───────────────────────────────────────────────────
-
-  async seed(_request: FastifyRequest, reply: FastifyReply) {
-    // Only allow in staging/development, not production
-    if (process.env.NODE_ENV === 'production' && process.env.ALLOW_PRODUCTION_SEED !== 'true') {
-      return reply.status(403).send({ error: 'Seed endpoint is disabled in production' });
-    }
-
-    try {
-      const results = await seedStagingData();
-      return reply.send({
-        message: 'Staging data seeded successfully',
-        records: results,
-      });
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Unknown seed error';
-      return reply.status(500).send({
-        error: 'Seed failed',
-        details: message,
-      });
-    }
-  }
-
   // ── Events ────────────────────────────────────────────────
 
   async listEvents(request: FastifyRequest, _reply1: FastifyReply) {

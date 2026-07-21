@@ -18,6 +18,7 @@ import { templateRoutes } from './modules/templates/template.routes.js';
 import { ticketTypeRoutes } from './modules/ticket-types/ticket-type.routes.js';
 import { userRoutes } from './modules/users/user.routes.js';
 import { testPaymentRoutes } from './modules/payments/payment.test.routes.js';
+import { seedStagingData } from './modules/admin/seed.js';
 
 export async function buildApp() {
   const app = Fastify({
@@ -72,6 +73,30 @@ export async function buildApp() {
   await app.register(ticketTypeRoutes, { prefix: '/api/v1/ticket-types' });
   await app.register(userRoutes, { prefix: '/api/v1/users' });
   await app.register(adminRoutes, { prefix: '/api/v1/admin' });
+
+  // ── Seed Endpoint (staging only, protected by SEED_API_KEY) ──
+  app.post('/api/v1/admin/seed', async (request, reply) => {
+    // Protect with a secret key so it works without auth
+    const seedKey = (request.headers as Record<string, string>)['x-seed-key'];
+    const expectedKey = process.env.SEED_API_KEY;
+
+    if (expectedKey && seedKey !== expectedKey) {
+      return reply.status(401).send({ error: 'Invalid seed key' });
+    }
+
+    // Only allow in non-production environments
+    if (process.env.NODE_ENV === 'production' && process.env.ALLOW_PRODUCTION_SEED !== 'true') {
+      return reply.status(403).send({ error: 'Seed endpoint is disabled in production' });
+    }
+
+    try {
+      const results = await seedStagingData();
+      return reply.send({ message: 'Staging data seeded successfully', records: results });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unknown seed error';
+      return reply.status(500).send({ error: 'Seed failed', details: message });
+    }
+  });
 
   // ── Test Payment (staging only) ─────────────────────
   await app.register(testPaymentRoutes, { prefix: '/api/v1' });
