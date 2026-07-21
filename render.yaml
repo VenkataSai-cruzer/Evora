@@ -12,7 +12,7 @@
 #
 # ── Staging URLs (temp) ──────────────────────────────────
 # Backend:  https://seven-notes-api.onrender.com
-# Frontend: https://seven-notes-staging.workers.dev
+# Frontend: https://evora.workers.dev
 
 services:
   # ── Backend API (Fastify + Prisma + PostgreSQL) ────────
@@ -52,10 +52,10 @@ services:
 
       # ── URLs (update after frontend deploy) ─────────────
       - key: CORS_ORIGIN
-        value: https://seven-notes-staging.workers.dev
+        value: https://evora.workers.dev
 
       - key: FRONTEND_URL
-        value: https://seven-notes-staging.workers.dev
+        value: https://evora.workers.dev
 
       - key: API_BASE_URL
         value: https://seven-notes-api.onrender.com/api/v1
@@ -81,7 +81,7 @@ services:
         value: none
 
       # ── Supabase PostgreSQL (staging) ───────────────────
-      # Create a Supabase project named "seven-notes-staging"
+      # Create a Supabase project named "evora"
       # Copy connection strings from Project Settings > Database
       - key: DATABASE_URL
         sync: false
@@ -121,7 +121,7 @@ services:
         sync: false
 
       - key: R2_BUCKET_NAME
-        value: seven-notes-staging
+        value: evora
 
       - key: R2_ENDPOINT
         sync: false
