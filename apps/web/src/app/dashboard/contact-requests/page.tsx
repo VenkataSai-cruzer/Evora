@@ -1,17 +1,15 @@
 export const dynamic = 'force-dynamic';
 
-import { redirect } from 'next/navigation';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { getSession, listContactRequests } from '@/lib/api-client';
+import { requireRole } from '@/lib/auth';
+import { listContactRequests } from '@/lib/api-client';
 
 interface ContactRequestsPageProps {
   searchParams: { [key: string]: string | string[] | undefined };
 }
 
 export default async function ContactRequestsPage({ searchParams }: ContactRequestsPageProps) {
-  const session = await getSession();
-  if (!session) redirect('/auth/login?callbackUrl=/dashboard/contact-requests');
-  if (session.role !== 'ADMIN') redirect('/');
+  await requireRole('ADMIN');
 
   const statusFilter = typeof searchParams.status === 'string' ? searchParams.status : '';
   const search = typeof searchParams.q === 'string' ? searchParams.q : '';

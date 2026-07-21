@@ -1,11 +1,12 @@
 export const dynamic = 'force-dynamic';
 
-import { notFound, redirect } from 'next/navigation';
+import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Badge } from '@/components/ui/Badge';
 import { formatDate } from '@/lib/dates';
-import { getSession, getTicket } from '@/lib/api-client';
+import { requireAuth } from '@/lib/auth';
+import { getTicket } from '@/lib/api-client';
 import { TicketPassClient } from './TicketPassClient';
 
 interface PageProps {
@@ -25,10 +26,7 @@ const STATUS_STYLES: Record<string, { variant: 'success' | 'warning' | 'error' |
 };
 
 export default async function TicketDetailPage({ params }: PageProps) {
-  const session = await getSession();
-  if (!session) {
-    redirect(`/auth/login?callbackUrl=/tickets/${params.ticketNumber}`);
-  }
+  const session = await requireAuth(`/tickets/${params.ticketNumber}`);
 
   let ticket;
   try {

@@ -1,17 +1,16 @@
 export const dynamic = 'force-dynamic';
 
-import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { formatDate } from '@/lib/dates';
-import { getSession, listAdminEvents } from '@/lib/api-client';
+import { requireAuth } from '@/lib/auth';
+import { listAdminEvents } from '@/lib/api-client';
 
 interface EventsPageProps {
   searchParams: { [key: string]: string | string[] | undefined };
 }
 
 export default async function OrganizerEventsPage({ searchParams }: EventsPageProps) {
-  const session = await getSession();
-  if (!session) redirect('/auth/login?callbackUrl=/dashboard/events');
+  await requireAuth('/dashboard/events');
 
   const statusFilter = typeof searchParams.status === 'string' ? searchParams.status : '';
   const page = Math.max(1, typeof searchParams.page === 'string' ? parseInt(searchParams.page, 10) : 1);

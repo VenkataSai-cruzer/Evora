@@ -1,7 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { redirect } from 'next/navigation';
-import { getSession } from '@/lib/api-client';
+import { requireAuth } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,8 +10,7 @@ export const metadata: Metadata = {
 };
 
 export default async function ProfilePage() {
-  const session = await getSession();
-  if (!session) redirect('/auth/login?callbackUrl=/profile');
+  const session = await requireAuth('/profile');
 
   return (
     <div className="page-container py-16">

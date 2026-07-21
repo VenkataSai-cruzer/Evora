@@ -1,6 +1,5 @@
 import type { Metadata } from 'next';
-import { redirect } from 'next/navigation';
-import { getSession } from '@/lib/api-client';
+import { requireRole } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,9 +9,7 @@ export const metadata: Metadata = {
 };
 
 export default async function PaymentsPage() {
-  const session = await getSession();
-  if (!session) redirect('/auth/login?callbackUrl=/dashboard/payments');
-  if (session.role !== 'ADMIN') redirect('/dashboard');
+  await requireRole('ADMIN');
 
   return (
     <div>

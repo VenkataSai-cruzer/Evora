@@ -1,5 +1,4 @@
-import { redirect } from 'next/navigation';
-import { getSession } from '@/lib/api-client';
+import { requireAuth } from '@/lib/auth';
 import { DashboardNav } from './DashboardNav';
 
 export const metadata = {
@@ -12,11 +11,7 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const session = await getSession();
-
-  if (!session) {
-    redirect('/auth/login?callbackUrl=/dashboard');
-  }
+  const session = await requireAuth('/dashboard');
 
   return (
     <div className="flex min-h-[calc(100vh-4rem)]">

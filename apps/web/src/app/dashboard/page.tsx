@@ -1,13 +1,12 @@
 export const dynamic = 'force-dynamic';
 
-import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { formatDate } from '@/lib/dates';
-import { getSession, getDashboardStats } from '@/lib/api-client';
+import { requireAuth } from '@/lib/auth';
+import { getDashboardStats } from '@/lib/api-client';
 
 export default async function DashboardPage() {
-  const session = await getSession();
-  if (!session) redirect('/auth/login?callbackUrl=/dashboard');
+  const session = await requireAuth('/dashboard');
 
   const stats = await getDashboardStats(session.id);
 

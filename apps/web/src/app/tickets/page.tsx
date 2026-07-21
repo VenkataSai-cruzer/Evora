@@ -1,12 +1,12 @@
 export const dynamic = 'force-dynamic';
 
-import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Badge } from '@/components/ui/Badge';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { formatDate } from '@/lib/dates';
-import { getSession, listMyTickets } from '@/lib/api-client';
+import { requireAuth } from '@/lib/auth';
+import { listMyTickets } from '@/lib/api-client';
 
 export const metadata: Metadata = {
   title: 'My Tickets',
@@ -21,10 +21,7 @@ const TICKET_STATUS_STYLES: Record<string, { variant: 'success' | 'warning' | 'e
 };
 
 export default async function MyTicketsPage() {
-  const session = await getSession();
-  if (!session) {
-    redirect('/auth/login?callbackUrl=/tickets');
-  }
+  await requireAuth('/tickets');
 
   const allTickets = await listMyTickets();
 
