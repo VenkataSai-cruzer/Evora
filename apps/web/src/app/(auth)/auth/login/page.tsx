@@ -1,155 +1,85 @@
 'use client';
 
-import { Suspense, useState } from 'react';
+import { useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
 import { login } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-provider';
 import { z } from 'zod';
 
-const loginSchema = z.object({
-  email: z.string().email('Please enter a valid email'),
+const schema = z.object({
+  email: z.string().email('Enter a valid email'),
   password: z.string().min(1, 'Password is required'),
 });
-
-export default function LoginPage() {
-  return (
-    <Suspense fallback={<div className="flex min-h-[80vh] items-center justify-center"><p className="text-text-secondary">Loading...</p></div>}>
-      <LoginForm />
-    </Suspense>
-  );
-}
 
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const callbackUrl = searchParams.get('callbackUrl') || '/';
+  const callbackUrl = searchParams.get('callbackUrl') || '/my-event';
   const { refresh } = useAuth();
-
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  const [isLoading, setIsLoading] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
-    setFieldErrors({});
-
-    const parsed = loginSchema.safeParse({ email, password });
+    const parsed = schema.safeParse({ email, password });
     if (!parsed.success) {
-      const errors: Record<string, string> = {};
-      for (const issue of parsed.error.issues) {
-        const field = issue.path[0] as string;
-        if (!errors[field]) errors[field] = issue.message;
-      }
-      setFieldErrors(errors);
+      setError(parsed.error.issues[0].message);
       return;
     }
-
-    setIsLoading(true);
-
+    setLoading(true);
     try {
       const result = await login(email, password);
       if (result.user) {
         await refresh();
-        // Use replace instead of push to avoid back-button issues
-        router.replace(callbackUrl);
+        router.replace(result.user.role === 'ADMIN' ? '/admin' : callbackUrl);
         router.refresh();
       } else {
-        setError('Invalid email or password. Please try again.');
-        setIsLoading(false);
+        setError('Invalid email or password');
+        setLoading(false);
       }
     } catch {
-      setError('Invalid email or password. Please try again.');
-      setIsLoading(false);
+      setError('Invalid email or password');
+      setLoading(false);
     }
   }
 
   return (
-    <div className="flex min-h-[80vh] items-center justify-center px-4 py-12">
+    <div className="flex min-h-[80vh] items-center justify-center px-4">
       <div className="w-full max-w-sm">
-        {/* Header */}
         <div className="mb-8 text-center">
-          <Link href="/" className="inline-flex items-center gap-2 text-lg font-bold text-white">
-            ✦ 7 NOTES
-          </Link>
-          <h1 className="mt-6 text-2xl font-bold text-white">Welcome back</h1>
+          <h1 className="text-2xl font-bold text-white">Welcome back</h1>
           <p className="mt-1 text-sm text-text-secondary">Sign in to your account</p>
         </div>
-
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="space-y-4" noValidate>
-          {error && (
-            <div
-              className="rounded-lg border border-error/30 bg-error-bg px-4 py-3 text-sm text-error"
-              role="alert"
-            >
-              {error}
-            </div>
-          )}
-
-          <Input
-            label="Email"
-            type="email"
-            placeholder="you@example.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            error={fieldErrors.email}
-            autoComplete="email"
-            autoFocus
-          />
-
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {error && <div className="rounded-lg bg-error-bg px-4 py-3 text-sm text-error">{error}</div>}
           <div>
-            <Input
-              label="Password"
-              type={showPassword ? 'text' : 'password'}
-              placeholder="Enter your password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              error={fieldErrors.password}
-              autoComplete="current-password"
-            />
-            <div className="mt-1 flex justify-end">
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="text-xs text-text-muted transition-colors hover:text-text-secondary"
-              >
-                {showPassword ? 'Hide' : 'Show'} password
-              </button>
-            </div>
+            <label htmlFor="email" className="mb-1.5 block text-sm text-text-secondary">Email</label>
+            <input id="email" type="email" value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" autoFocus
+              className="w-full rounded-lg border border-[var(--color-border)] bg-surface px-3 py-2.5 text-sm text-white placeholder:text-text-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary" />
           </div>
-
-          <div className="flex justify-end">
-            <Link
-              href="/auth/forgot-password"
-              className="text-xs font-medium text-primary transition-colors hover:text-primary-hover"
-            >
-              Forgot password?
-            </Link>
+          <div>
+            <label htmlFor="password" className="mb-1.5 block text-sm text-text-secondary">Password</label>
+            <input id="password" type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password"
+              className="w-full rounded-lg border border-[var(--color-border)] bg-surface px-3 py-2.5 text-sm text-white placeholder:text-text-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary" />
           </div>
-
-          <Button type="submit" className="w-full" size="lg" isLoading={isLoading}>
-            Sign in
-          </Button>
+          <button type="submit" disabled={loading}
+            className="w-full rounded-lg bg-primary py-2.5 text-sm font-medium text-white transition-colors hover:bg-primary-hover disabled:opacity-50">
+            {loading ? 'Signing in...' : 'Sign in'}
+          </button>
         </form>
-
-        {/* Sign up link */}
-        <p className="mt-8 text-center text-sm text-text-secondary">
+        <p className="mt-6 text-center text-sm text-text-secondary">
           Don&apos;t have an account?{' '}
-          <Link
-            href="/auth/register"
-            className="font-medium text-primary transition-colors hover:text-primary-hover"
-          >
-            Create one
-          </Link>
+          <Link href="/auth/register" className="font-medium text-primary hover:text-primary-hover">Create one</Link>
         </p>
       </div>
     </div>
   );
+}
+
+export default function LoginPage() {
+  return <Suspense><LoginForm /></Suspense>;
 }

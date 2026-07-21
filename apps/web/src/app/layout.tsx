@@ -2,8 +2,8 @@ import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import '@/styles/globals.css';
 import { Providers } from '@/providers';
-import { OfflineBanner } from '@/components/ui/OfflineBanner';
 import { StagingBanner } from '@/components/StagingBanner';
+import { OfflineBanner } from '@/components/ui/OfflineBanner';
 
 const inter = Inter({
   subsets: ['latin'],
@@ -16,7 +16,7 @@ export const metadata: Metadata = {
     default: '7 NOTES — Official Event Platform',
     template: '%s — 7 NOTES',
   },
-  description: 'Discover events, book tickets, and experience live music with 7 NOTES.',
+  description: 'Live music events by 7 NOTES. Book tickets, attend, and experience.',
   openGraph: {
     siteName: '7 NOTES',
     type: 'website',
