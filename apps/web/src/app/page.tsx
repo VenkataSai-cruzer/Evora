@@ -1,45 +1,20 @@
+// v2 — deployed via GitHub Actions auto-deploy
+// Frontend: https://evora.7notes.workers.dev
+// Backend:  https://seven-notes-api.onrender.com
+
+export const dynamic = 'force-dynamic';
+
 import Link from 'next/link';
-import { prisma } from '@/lib/prisma';
 import { Badge } from '@/components/ui/Badge';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { parseInstruments, formatDate } from '@/lib/prisma-types';
+import { formatDate } from '@/lib/dates';
+import { listPublicEvents } from '@/lib/api-client';
 
 export default async function HomePage() {
-  const [events, totalEvents, totalUsers, totalTickets] = await Promise.all([
-    prisma.event.findMany({
-      where: {
-        status: 'PUBLISHED',
-        startAt: { gte: new Date() },
-      },
-      orderBy: { startAt: 'asc' },
-      take: 4,
-      select: {
-        id: true,
-        title: true,
-        slug: true,
-        posterObjectKey: true,
-        startAt: true,
-        venueName: true,
-        totalCapacity: true,
-        ticketTypes: {
-          select: { id: true, name: true, price: true },
-        },
-        _count: {
-          select: {
-            tickets: {
-              where: { status: { in: ['CONFIRMED', 'CHECKED_IN'] } },
-            },
-          },
-        },
-      },
-    }),
-    prisma.event.count({ where: { status: 'PUBLISHED' } }),
-    prisma.user.count(),
-    prisma.ticket.count({ where: { status: { in: ['CONFIRMED', 'CHECKED_IN'] } } }),
-  ]);
+  const { events } = await listPublicEvents({ upcoming: true, limit: 4 });
 
-  const uniqueVenues = totalEvents;
-  const parsedEvents = events;
+  const totalEvents = events.length;
+  const totalTickets = events.reduce((sum, e) => sum + e._count.tickets, 0);
 
   return (
     <div className="min-h-screen">
@@ -53,8 +28,8 @@ export default async function HomePage() {
         <div className="page-container relative z-10 text-center">
           <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-4 py-1.5 text-xs font-medium text-primary-light">
             <span className="h-1.5 w-1.5 rounded-full bg-success animate-pulse" />
-            {parsedEvents.length > 0
-              ? `${parsedEvents.length} upcoming ${parsedEvents.length === 1 ? 'session' : 'sessions'}`
+            {events.length > 0
+              ? `${events.length} upcoming ${events.length === 1 ? 'session' : 'sessions'}`
               : 'Live music community'}
           </div>
 
@@ -95,9 +70,9 @@ export default async function HomePage() {
           </Link>
         </div>
 
-        {parsedEvents.length > 0 ? (
+        {events.length > 0 ? (
           <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {parsedEvents.map((event) => {
+            {events.map((event) => {
               const spotsLeft = event.totalCapacity - event._count.tickets;
               const isFree = event.ticketTypes.some((t) => t.price === 0);
               const minPrice = Math.min(...event.ticketTypes.map((t) => t.price));
@@ -157,8 +132,8 @@ export default async function HomePage() {
         <div className="page-container grid grid-cols-2 gap-8 py-12 sm:grid-cols-4">
           {[
             { value: totalEvents > 0 ? `${totalEvents}` : '0', label: 'Events Hosted' },
-            { value: totalUsers > 0 ? `${totalUsers}` : '0', label: 'Musicians' },
-            { value: uniqueVenues > 0 ? `${uniqueVenues}` : '0', label: 'Venues' },
+            { value: '0', label: 'Musicians' },
+            { value: totalEvents > 0 ? `${totalEvents}` : '0', label: 'Venues' },
             { value: totalTickets > 0 ? `${totalTickets}` : '0', label: 'Tickets Issued' },
           ].map((stat) => (
             <div key={stat.label} className="text-center">
