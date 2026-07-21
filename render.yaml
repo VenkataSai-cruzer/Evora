@@ -1,47 +1,49 @@
-# Render Blueprint for 7 NOTES Backend API
-# Render Blueprint for 7 NOTES Backend API
-# Deploy to Render: https://render.com/docs/blueprint-spec
+# Render Blueprint for 7 NOTES Staging Backend API
+# Docs: https://render.com/docs/blueprint-spec
 #
-# Services:
-# - seven-notes-api: Node.js backend (Fastify + Prisma)
+# ── Architecture ─────────────────────────────────────────
+# Backend: Fastify + Prisma (PostgreSQL via Supabase)
+# Frontend: Cloudflare Workers (deployed separately)
 #
-# ── Staging vs Production ───────────────────────────────────
-# For staging, change the following:
-#   APP_URL: https://staging.7notes.in
-#   API_URL: https://staging-api.7notes.in
-#   CORS_ORIGIN: https://staging.7notes.in
-#   R2_BUCKET_NAME: seven-notes-staging
-#   Use a separate Supabase staging project
+# ── Monorepo Setup ───────────────────────────────────────
+# rootDir: . (repository root)
+# This ensures apps/api has access to the root-level prisma/ schema,
+# packages/shared, and the root node_modules workspace hoisting.
 #
-# Prerequisites:
-# 1. Supabase PostgreSQL database (see .env.example for connection strings)
-# 2. Cloudflare R2 bucket for file storage
-# 3. Resend API key for transactional emails
+# ── Staging URLs (temp) ──────────────────────────────────
+# Backend:  https://seven-notes-api.onrender.com
+# Frontend: https://seven-notes-staging.workers.dev
 
 services:
-  # ── Backend API (Fastify + Prisma) ─────────────────────────
+  # ── Backend API (Fastify + Prisma + PostgreSQL) ────────
   - type: web
     name: seven-notes-api
     env: node
-    region: singapore  # Closest to primary users (India / Asia)
-    plan: starter      # $7/month — sufficient for staging + low-traffic production
-    rootDir: apps/api
+    region: singapore
+    # Free tier — no credit card required
+    rootDir: .     # Repository root — needed for prisma/ and packages/
+
     buildCommand: |
-      npm install &&
-      npx prisma generate --schema=../../prisma/schema.prisma &&
-      npm run build
-    startCommand: npm run start
-    healthCheckPath: /api/v1/health
+      npm install --workspace=apps/api --include-workspace-root
+      npx prisma generate --schema=prisma/schema.prisma
+      npm run build --workspace=apps/api
+
+    startCommand: npm run start --workspace=apps/api
+
+    healthCheckPath: /api/v1/ready
+
+    preDeployCommand: npx prisma migrate deploy --schema=prisma/schema.prisma
+
     autoDeploy: true
     numInstances: 1
 
-    # Run database migrations before each deploy
-    preDeployCommand: npx prisma migrate deploy --schema=../../prisma/schema.prisma
-
-    # ── Environment Variables ────────────────────────────────
     envVars:
+      # ── Node & Runtime ──────────────────────────────────
       - key: NODE_ENV
-        value: production
+        value: staging
+
+      - key: APP_ENV
+        value: staging
 
       - key: PORT
         value: 10000
@@ -49,20 +51,17 @@ services:
       - key: HOST
         value: 0.0.0.0
 
-      # ── Change for staging ────────────────────────────────
-      - key: APP_URL
-        value: https://7notes.in
-        # staging: https://staging.7notes.in
-
-      - key: API_URL
-        value: https://api.7notes.in
-        # staging: https://staging-api.7notes.in
-
+      # ── URLs (update after frontend deploy) ─────────────
       - key: CORS_ORIGIN
-        value: https://7notes.in
-        # staging: https://staging.7notes.in
+        value: https://seven-notes-staging.workers.dev
 
-      # ── Session & Security ─────────────────────────────────
+      - key: FRONTEND_URL
+        value: https://seven-notes-staging.workers.dev
+
+      - key: API_BASE_URL
+        value: https://seven-notes-api.onrender.com/api/v1
+
+      # ── Session & Security ──────────────────────────────
       - key: SESSION_SECRET
         generateValue: true
 
@@ -72,17 +71,43 @@ services:
       - key: QR_SECRET
         generateValue: true
 
-      # ── Supabase PostgreSQL ────────────────────────────────
-      # Create a Supabase project at https://supabase.com
-      # Then copy connection strings from Project Settings > Database
+      - key: COOKIE_NAME
+        value: seven_notes_staging_session
+
+      # ── Staging CORS ────────────────────────────────────
+      - key: COOKIE_SECURE
+        value: "true"
+
+      - key: COOKIE_SAME_SITE
+        value: none
+
+      # ── Supabase PostgreSQL (staging) ───────────────────
+      # Create a Supabase project named "seven-notes-staging"
+      # Copy connection strings from Project Settings > Database
       - key: DATABASE_URL
         sync: false
 
+      # Direct connection for migrations (Supavisor session pooler on port 5432)
       - key: DIRECT_URL
         sync: false
 
-      # ── Cloudflare R2 (S3-compatible) ──────────────────────
-      # Create an R2 bucket. Get credentials from R2 > API Tokens
+      # ── Feature Flags (staging-safe) ────────────────────
+      - key: ENABLE_TEST_PAYMENT
+        value: "true"
+
+      - key: ENABLE_REAL_PAYMENTS
+        value: "false"
+
+      - key: ENABLE_EMAIL
+        value: "false"
+
+      - key: ENABLE_R2
+        value: "false"
+
+      - key: LOG_LEVEL
+        value: info
+
+      # ── Cloudflare R2 ───────────────────────────────────
       - key: R2_ACCOUNT_ID
         sync: false
 
@@ -93,16 +118,27 @@ services:
         sync: false
 
       - key: R2_BUCKET_NAME
-        value: seven-notes-production
-        # staging: seven-notes-staging
+        value: seven-notes-staging
 
       - key: R2_ENDPOINT
         sync: false
-        # Format: https://{ACCOUNT_ID}.r2.cloudflarestorage.com
 
-      # ── Resend (Transactional Email) ───────────────────────
+      # ── Resend (Email, disabled in staging) ─────────────
       - key: RESEND_API_KEY
         sync: false
 
       - key: EMAIL_FROM
-        value: 7 NOTES <tickets@7notes.in>
+        value: 7 NOTES Staging <staging@7notes.in>
+
+      # ── Staging Accounts ────────────────────────────────
+      - key: STAGING_ADMIN_EMAIL
+        value: admin@7notes.in
+
+      - key: STAGING_ADMIN_PASSWORD
+        sync: false
+
+      - key: STAGING_ATTENDEE_EMAIL
+        value: attendee@7notes.in
+
+      - key: STAGING_ATTENDEE_PASSWORD
+        sync: false
