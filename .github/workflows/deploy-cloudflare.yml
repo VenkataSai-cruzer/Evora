@@ -10,7 +10,8 @@ on:
       - 'package-lock.json'
 
 env:
-  NODE_VERSION: '20'
+  NODE_VERSION: '22'
+  HUSKY: '0'
 
 jobs:
   deploy:
