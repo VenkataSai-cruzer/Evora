@@ -43,8 +43,10 @@ model User {
   scannerAssignments      ScannerAssignment[]
   assignedOrganizerEvents OrganizerAssignment[]   @relation("OrganizerAssignedBy")
   assignedScannerEvents   ScannerAssignment[]     @relation("ScannerAssignedBy")
-  reviewedPaymentProofs   PaymentProof[]          @relation("PaymentProofReviewedBy")
-  submittedPaymentProofs  PaymentProof[]          @relation("PaymentProofSubmittedBy")
+  reviewedPaymentProofs       PaymentProof[]          @relation("PaymentProofReviewedBy")
+  submittedPaymentProofs      PaymentProof[]          @relation("PaymentProofSubmittedBy")
+  paymentProofHistorySubmitted PaymentProofHistory[] @relation("PaymentProofHistorySubmittedBy")
+  paymentProofHistoryReviewed  PaymentProofHistory[] @relation("PaymentProofHistoryReviewedBy")
   notificationLogs        NotificationLog[]
 
   @@index([role])
@@ -153,6 +155,7 @@ model Event {
   organizerAssignments OrganizerAssignment[]
   scannerAssignments   ScannerAssignment[]
   paymentProofs        PaymentProof[]
+  paymentProofHistory  PaymentProofHistory[]
 
   @@index([slug])
   @@index([status])
@@ -311,28 +314,30 @@ model TicketType {
 // ───────────────────────────────────────────────
 
 model Order {
-  id               String    @id @default(uuid())
-  orderNumber      String    @unique
-  eventId          String
-  userId           String
-  status           String    @default("PENDING_PAYMENT") // PENDING_PAYMENT | CONFIRMED | FAILED | EXPIRED | CANCELLED
-  subtotal         Int       @default(0)
-  fees             Int       @default(0)
-  total            Int       @default(0)
-  currency         String    @default("INR")
-  paymentProvider  String?   // utr | test | free
-  paymentReference String?
-  expiresAt        DateTime?
-  paidAt           DateTime?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  id                 String    @id @default(uuid())
+  orderNumber        String    @unique
+  eventId            String
+  userId             String
+  status             String    @default("PENDING_PAYMENT") // PENDING_PAYMENT | PENDING_VERIFICATION | CONFIRMED | REJECTED | FAILED | EXPIRED | CANCELLED
+  subtotal           Int       @default(0)
+  fees               Int       @default(0)
+  total              Int       @default(0)
+  currency           String    @default("INR")
+  paymentProvider    String?   // utr | test | free
+  paymentReference   String?
+  resubmissionCount  Int       @default(0) // tracks how many times user resubmitted after rejection
+  expiresAt          DateTime?
+  paidAt             DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
-  event        Event           @relation(fields: [eventId], references: [id])
-  user         User            @relation(fields: [userId], references: [id])
-  attendees    OrderAttendee[]
-  tickets      Ticket[]
-  payments     Payment[]
-  paymentProof PaymentProof?
+  event              Event                @relation(fields: [eventId], references: [id])
+  user               User                 @relation(fields: [userId], references: [id])
+  attendees          OrderAttendee[]
+  tickets            Ticket[]
+  payments           Payment[]
+  paymentProof       PaymentProof?
+  paymentProofHistory PaymentProofHistory[]
 
   @@index([orderNumber])
   @@index([eventId])
@@ -393,6 +398,46 @@ model PaymentProof {
   @@index([eventId])
   @@index([submittedById])
   @@index([utrNumber])
+}
+
+// ───────────────────────────────────────────────
+// PAYMENT PROOF HISTORY (immutable audit trail of all proof submissions)
+// ───────────────────────────────────────────────
+
+model PaymentProofHistory {
+  id                   String    @id @default(uuid())
+  orderId              String
+  originalProofId      String?   // reference to the original PaymentProof (null if deleted)
+  submittedById        String
+  eventId              String
+  utrNumber            String
+  amount               Int       // expected amount in paise
+  originalFileName     String
+  storedFileName       String    // randomized
+  mimeType             String
+  fileSize             Int
+  checksum             String    // SHA-256 of file contents
+  googleDriveFileId    String?
+  googleDriveViewUrl   String?
+  storageProvider      String    @default("GOOGLE_DRIVE")
+  status               String    // PENDING | APPROVED | REJECTED | RESUBMISSION_REQUESTED
+  rejectionReason      String?
+  submittedAt          DateTime
+  reviewedAt           DateTime?
+  reviewedById         String?
+  archivedAt           DateTime  @default(now()) // when this record was archived (superseded)
+  createdAt            DateTime  @default(now())
+
+  order       Order  @relation(fields: [orderId], references: [id])
+  submittedBy User   @relation("PaymentProofHistorySubmittedBy", fields: [submittedById], references: [id])
+  event       Event  @relation(fields: [eventId], references: [id])
+  reviewedBy  User?  @relation("PaymentProofHistoryReviewedBy", fields: [reviewedById], references: [id])
+
+  @@index([orderId])
+  @@index([eventId])
+  @@index([submittedById])
+  @@index([utrNumber])
+  @@index([archivedAt])
 }
 
 // ───────────────────────────────────────────────

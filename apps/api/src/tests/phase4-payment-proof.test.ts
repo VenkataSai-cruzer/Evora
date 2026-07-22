@@ -3,6 +3,7 @@
  * Tests file validation logic (MIME, extension, magic bytes, size, UTR format).
  */
 import { describe, it, expect } from 'vitest';
+import { normalizeUtr, isValidUtr } from '../shared/utr.js';
 
 // ── Replicate the validation logic from payment.controller.ts ─────────
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
@@ -23,9 +24,6 @@ function validateMagic(buf: Buffer, mime: string): boolean {
   }
   return sigs.some(s => buf.slice(0, s.length).equals(s));
 }
-
-function normalizeUtr(utr: string) { return utr.trim().toUpperCase(); }
-function isValidUtr(utr: string) { return /^[A-Z0-9]{8,30}$/.test(normalizeUtr(utr)); }
 
 describe('UTR validation', () => {
   it('accepts valid 12-char alphanumeric UTR', () => {

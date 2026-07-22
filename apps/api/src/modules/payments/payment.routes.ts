@@ -17,4 +17,26 @@ export async function paymentRoutes(app: FastifyInstance) {
     preHandler: [requireAuth],
     handler: controller.getMyProofStatus.bind(controller),
   });
+
+  // --- Phase 4.3: Verification endpoints ---
+
+  /**
+   * GET /payments/proofs/:proofId/image
+   * Authenticated screenshot proxy.
+   * Admin → any proof. Organizer → assigned events only. Attendee → own proof only.
+   */
+  app.get('/proofs/:proofId/image', {
+    preHandler: [requireAuth],
+    handler: controller.getProofImage.bind(controller),
+  });
+
+  /**
+   * GET /payments/check-utr/:utr
+   * Advisory duplicate UTR check.
+   * Admin/Organizer can check any UTR.
+   */
+  app.get('/check-utr/:utr', {
+    preHandler: [requireAuth, requireRole('ADMIN', 'ORGANIZER')],
+    handler: controller.checkUtr.bind(controller),
+  });
 }

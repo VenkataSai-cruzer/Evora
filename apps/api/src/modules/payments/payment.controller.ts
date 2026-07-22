@@ -6,6 +6,7 @@ import {
   sendPaymentReceivedEmail,
   sendTelegramAdminAlert,
 } from '../../infrastructure/email/email.service.js';
+import { normalizeUtr } from '../../shared/utr.js';
 import crypto from 'crypto';
 import { randomUUID } from 'crypto';
 
@@ -33,10 +34,6 @@ function validateMagicBytes(buffer: Buffer, mimeType: string): boolean {
   }
 
   return signatures.some((sig) => buffer.slice(0, sig.length).equals(sig));
-}
-
-function normalizeUtr(utr: string): string {
-  return utr.trim().toUpperCase();
 }
 
 export class PaymentController {
@@ -126,9 +123,11 @@ export class PaymentController {
     if (!order) return reply.status(404).send({ error: 'Order not found' });
     if (order.userId !== userId) return reply.status(403).send({ error: 'Access denied' });
 
-    if (order.status !== 'PENDING_PAYMENT' && order.status !== 'CANCELLED') {
+    // Accept: PENDING_PAYMENT (first submission), REJECTED (resubmission)
+    const validStates = ['PENDING_PAYMENT', 'REJECTED'];
+    if (!validStates.includes(order.status)) {
       return reply.status(400).send({
-        error: `Order status is "${order.status}" — cannot submit payment proof`,
+        error: `Order status is "${order.status}" — cannot submit payment proof. Only PENDING_PAYMENT or REJECTED orders can submit.`,
       });
     }
 
@@ -183,34 +182,59 @@ export class PaymentController {
       console.log(`[Dev] Payment proof would be stored for order ${orderNumber}, UTR ${normalized}`);
     }
 
+    // Determine if this is a resubmission before the transaction to avoid stale reads
+    const isResubmission = order.status === 'REJECTED';
+
     // Save metadata to PostgreSQL in a transaction
     let proof;
     try {
       proof = await prisma.$transaction(async (tx) => {
-        // If resubmitting after cancellation, reset order
-        if (order.status === 'CANCELLED') {
+        // If resubmitting after rejection, archive old proof to history
+        if (isResubmission) {
+          const oldProof = await tx.paymentProof.findUnique({ where: { orderId: order.id } });
+          if (oldProof) {
+            // Archive to history before deleting
+            await tx.paymentProofHistory.create({
+              data: {
+                orderId: order.id,
+                originalProofId: oldProof.id,
+                submittedById: oldProof.submittedById,
+                eventId: oldProof.eventId,
+                utrNumber: oldProof.utrNumber,
+                amount: oldProof.amount,
+                originalFileName: oldProof.originalFileName,
+                storedFileName: oldProof.storedFileName,
+                mimeType: oldProof.mimeType,
+                fileSize: oldProof.fileSize,
+                checksum: oldProof.checksum,
+                googleDriveFileId: oldProof.googleDriveFileId,
+                googleDriveViewUrl: oldProof.googleDriveViewUrl,
+                storageProvider: oldProof.storageProvider,
+                status: oldProof.status,
+                rejectionReason: oldProof.rejectionReason,
+                submittedAt: oldProof.submittedAt,
+                reviewedAt: oldProof.reviewedAt,
+                reviewedById: oldProof.reviewedById,
+              },
+            });
+            // Delete old proof so new one can be created with unique orderId
+            await tx.paymentProof.delete({ where: { orderId: order.id } });
+          }
+          // Increment resubmission count
+          // (rejection reason lives on PaymentProof/PaymentProofHistory, not Order)
           await tx.order.update({
             where: { id: order.id },
-            data: { status: 'PENDING_PAYMENT' },
+            data: {
+              status: 'PENDING_VERIFICATION',
+              resubmissionCount: { increment: 1 },
+            },
           });
-          // Restore capacity
-          const groups = await tx.orderAttendee.groupBy({
-            by: ['ticketTypeId'],
-            where: { orderId: order.id },
-            _count: { id: true },
+        } else {
+          // First submission: set order to PENDING_VERIFICATION
+          await tx.order.update({
+            where: { id: order.id },
+            data: { status: 'PENDING_VERIFICATION' },
           });
-          for (const g of groups) {
-            await tx.ticketType.update({
-              where: { id: g.ticketTypeId },
-              data: { soldCount: { increment: g._count.id } },
-            });
-          }
-        }
-
-        // Delete any previous PaymentProof for this order (history kept in AuditLog)
-        const existing = await tx.paymentProof.findUnique({ where: { orderId: order.id } });
-        if (existing) {
-          await tx.paymentProof.delete({ where: { orderId: order.id } });
         }
 
         // Also create a legacy Payment record for backwards compat
@@ -258,8 +282,9 @@ export class PaymentController {
     }
 
     // Audit log
+    const auditAction = isResubmission ? 'PAYMENT_PROOF_RESUBMITTED' : 'PAYMENT_PROOF_SUBMITTED';
     await writeAuditLog(
-      order.status === 'CANCELLED' ? 'PAYMENT_PROOF_RESUBMITTED' : 'PAYMENT_PROOF_SUBMITTED',
+      auditAction,
       'PaymentProof',
       proof.id,
       {
@@ -328,6 +353,180 @@ export class PaymentController {
             rejectionReason: order.paymentProof.rejectionReason,
           }
         : null,
+    };
+  }
+
+  /**
+   * GET /payments/proofs/:proofId/image
+   * Authenticated screenshot proxy.
+   * Streams the image from Google Drive without exposing the Drive URL.
+   *
+   * Authorization:
+   *   - ADMIN: any proof
+   *   - Organizer: only proofs for assigned events
+   */
+  async getProofImage(request: FastifyRequest, reply: FastifyReply) {
+    const { proofId } = request.params as { proofId: string };
+    const userId = request.user!.id;
+    const userRole = request.user!.role;
+
+    // Fetch proof with order and event for authorization
+    const proof = await prisma.paymentProof.findUnique({
+      where: { id: proofId },
+      include: {
+        order: {
+          include: {
+            event: { select: { id: true, title: true } },
+          },
+        },
+      },
+    });
+
+    if (!proof) {
+      return reply.status(404).send({ error: 'Payment proof not found' });
+    }
+
+    if (!proof.order) {
+      return reply.status(404).send({ error: 'Associated order not found' });
+    }
+
+    // Authorize: ADMIN can view any proof
+    if (userRole !== 'ADMIN') {
+      // Organizer: must be assigned to the event
+      if (userRole === 'ORGANIZER') {
+        const assignment = await prisma.organizerAssignment.findUnique({
+          where: {
+            organizerId_eventId: {
+              organizerId: userId,
+              eventId: proof.order.eventId,
+            },
+          },
+        });
+        if (!assignment) {
+          return reply.status(403).send({ error: 'Not assigned to this event' });
+        }
+      } else {
+        // Other roles: only if they submitted the proof
+        if (proof.submittedById !== userId) {
+          return reply.status(403).send({ error: 'Access denied' });
+        }
+      }
+    }
+
+    // Get the file from Google Drive
+    const fileId = proof.googleDriveFileId;
+    if (!fileId) {
+      return reply.status(404).send({ error: 'Screenshot file is not stored' });
+    }
+
+    try {
+      const driveService = new GoogleDriveService();
+      const { stream, mimeType } = await driveService.getFileStream(fileId);
+
+      // Set cache control — sensitive data, prevent caching
+      reply.header('Content-Type', mimeType);
+      reply.header('Cache-Control', 'no-store, must-revalidate');
+      reply.header('Pragma', 'no-cache');
+
+      // Audit log: SCREENSHOT_VIEWED
+      await writeAuditLog('SCREENSHOT_VIEWED', 'PaymentProof', proofId, {
+        actorId: userId,
+        actorRole: userRole,
+        eventId: proof.order.eventId,
+        ipAddress: request.ip,
+        userAgent: request.headers['user-agent'],
+      }).catch(() => {});
+
+      return reply.send(stream);
+    } catch (err) {
+      console.error('[ScreenshotProxy] Failed to stream file:', err);
+      return reply.status(502).send({ error: 'Failed to load screenshot from storage' });
+    }
+  }
+
+  /**
+   * GET /payments/check-utr/:utr
+   * Check if a UTR number has been used before.
+   * Advisory only — does not auto-approve or reject.
+   *
+   * Returns:
+   *   - duplicate: boolean
+   *   - relatedOrder: { orderNumber, eventTitle, status } | null
+   *   - submissionCount: number
+   */
+  async checkUtr(request: FastifyRequest, reply: FastifyReply) {
+    const { utr } = request.params as { utr: string };
+
+    // Normalize using shared utility
+    const normalized = normalizeUtr(utr);
+
+    if (!normalized || normalized.length < 3) {
+      return reply.status(400).send({ error: 'UTR must be at least 3 characters' });
+    }
+
+    // Search both PaymentProof and legacy Payment tables
+    const [proofMatch, paymentMatch] = await Promise.all([
+      prisma.paymentProof.findUnique({
+        where: { utrNumber: normalized },
+        select: {
+          id: true,
+          utrNumber: true,
+          status: true,
+          order: {
+            select: {
+              orderNumber: true,
+              event: { select: { title: true } },
+            },
+          },
+        },
+      }),
+      prisma.payment.findUnique({
+        where: { utrNumber: normalized },
+        select: {
+          id: true,
+          status: true,
+          order: {
+            select: {
+              orderNumber: true,
+              event: { select: { title: true } },
+            },
+          },
+        },
+      }),
+    ]);
+
+    // Count total submissions of this UTR across all orders
+    const totalSubmissions = await prisma.paymentProof.count({
+      where: { utrNumber: normalized },
+    });
+
+    const match = proofMatch || paymentMatch;
+
+    // Audit log: DUPLICATE_UTR_DETECTED (only if duplicate found)
+    if (match) {
+      // Use correct entity type: PaymentProof for current table, Payment for legacy
+      const entityType = proofMatch ? 'PaymentProof' : 'Payment';
+      await writeAuditLog('DUPLICATE_UTR_DETECTED', entityType, match.id, {
+        actorId: request.user!.id,
+        actorRole: request.user!.role,
+        metadata: {
+          utrNumber: normalized,
+          relatedOrder: match.order?.orderNumber,
+        },
+      }).catch(() => {});
+    }
+
+    return {
+      duplicate: !!match,
+      relatedOrder: match?.order
+        ? {
+            orderNumber: match.order.orderNumber,
+            eventTitle: match.order.event.title,
+            status: (match as typeof proofMatch)?.status ||
+                    (match as typeof paymentMatch)?.status || 'UNKNOWN',
+          }
+        : null,
+      submissionCount: totalSubmissions,
     };
   }
 }

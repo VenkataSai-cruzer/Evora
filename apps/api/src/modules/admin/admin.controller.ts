@@ -268,7 +268,12 @@ export class AdminController {
     const skip = (page - 1) * limit;
 
     const where: Record<string, unknown> = {};
-    where.status = query.status || 'PENDING_PAYMENT';
+    // Default: show both PENDING_PAYMENT (no proof yet) and PENDING_VERIFICATION (proof submitted, awaiting review)
+    if (query.status) {
+      where.status = query.status;
+    } else {
+      where.status = { in: ['PENDING_PAYMENT', 'PENDING_VERIFICATION'] };
+    }
     if (query.eventId) where.eventId = query.eventId;
 
     const [orders, total] = await Promise.all([
@@ -312,18 +317,39 @@ export class AdminController {
   /**
    * POST /admin/orders/:id/approve
    * Idempotent. Uses shared finalization service.
+   * Accepts: PENDING_PAYMENT, PENDING_VERIFICATION (initial), REJECTED (resubmission approved)
    */
   async approveOrder(request: FastifyRequest, reply: FastifyReply) {
     const { id } = request.params as { id: string };
-    const body = request.body as { overrideAmount?: number; note?: string } | undefined;
+    const body = request.body as { overrideAmount?: number; note?: string; expectedProofUpdatedAt?: string } | undefined;
     const adminId = request.user!.id;
 
     try {
-      // Update PaymentProof status
+      // Optimistic concurrency: check payment proof hasn't been reviewed by another admin
       const order = await prisma.order.findUnique({ where: { id }, include: { paymentProof: true } });
       if (!order) return reply.status(404).send({ error: 'Order not found' });
 
-      if (order.paymentProof) {
+      if (order.paymentProof && order.paymentProof.status !== 'PENDING') {
+        return reply.status(409).send({
+          error: 'Conflict: This payment has already been reviewed.',
+          currentStatus: order.paymentProof.status,
+          reviewedAt: order.paymentProof.reviewedAt,
+        });
+      }
+
+      // Optional: verify the client's expected updatedAt matches
+      if (
+        body?.expectedProofUpdatedAt &&
+        order.paymentProof &&
+        order.paymentProof.updatedAt.toISOString() !== body.expectedProofUpdatedAt
+      ) {
+        return reply.status(409).send({
+          error: 'Conflict: This payment has been modified since you loaded it. Please refresh.',
+        });
+      }
+
+      // Update PaymentProof status
+      if (order.paymentProof && order.paymentProof.status === 'PENDING') {
         await prisma.paymentProof.update({
           where: { orderId: id },
           data: { status: 'APPROVED', reviewedAt: new Date(), reviewedById: adminId },
@@ -346,6 +372,9 @@ export class AdminController {
   /**
    * POST /admin/orders/:id/reject
    * Admin must provide a reason.
+   *
+   * Order stays alive at REJECTED status — user can resubmit proof on the same order.
+   * Capacity is NOT released on rejection (remains reserved for the order).
    */
   async rejectOrder(request: FastifyRequest, reply: FastifyReply) {
     const { id } = request.params as { id: string };
@@ -362,7 +391,12 @@ export class AdminController {
         include: { user: true, event: true, payments: { where: { status: 'PENDING' }, orderBy: { createdAt: 'desc' }, take: 1 }, paymentProof: true },
       });
       if (!order) return reply.status(404).send({ error: 'Order not found' });
-      if (order.status !== 'PENDING_PAYMENT') return reply.status(400).send({ error: `Order is "${order.status}", not PENDING_PAYMENT` });
+
+      // Accept: PENDING_PAYMENT, PENDING_VERIFICATION
+      const validStates = ['PENDING_PAYMENT', 'PENDING_VERIFICATION'];
+      if (!validStates.includes(order.status)) {
+        return reply.status(400).send({ error: `Order is "${order.status}" — can only reject orders in PENDING_PAYMENT or PENDING_VERIFICATION` });
+      }
 
       await prisma.$transaction(async (tx) => {
         if (order.payments[0]) {
@@ -371,11 +405,13 @@ export class AdminController {
         if (order.paymentProof) {
           await tx.paymentProof.update({ where: { orderId: id }, data: { status: 'REJECTED', rejectionReason: body.reason, reviewedAt: new Date(), reviewedById: adminId } });
         }
-        await tx.order.update({ where: { id }, data: { status: 'CANCELLED' } });
-        const groups = await tx.orderAttendee.groupBy({ by: ['ticketTypeId'], where: { orderId: id }, _count: { id: true } });
-        for (const g of groups) {
-          await tx.ticketType.update({ where: { id: g.ticketTypeId }, data: { soldCount: { decrement: g._count.id } } });
-        }
+        // Order stays alive at REJECTED — NOT CANCELLED
+        // Capacity remains reserved — user can resubmit proof
+        // Rejection reason stored on PaymentProof (not duplicated on Order)
+        await tx.order.update({
+          where: { id },
+          data: { status: 'REJECTED' },
+        });
       });
 
       await writeAuditLog('PAYMENT_REJECTED', 'Order', id, {
@@ -391,7 +427,7 @@ export class AdminController {
 
       sendTelegramAdminAlert(`❌ <b>Payment Rejected</b>\nOrder: <code>${order.orderNumber}</code>\nReason: ${body.reason}`).catch(console.error);
 
-      return reply.send({ success: true, message: `Payment rejected: ${body.reason}` });
+      return reply.send({ success: true, message: `Payment rejected: ${body.reason} — user can resubmit proof.` });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       return reply.status(400).send({ error: 'Rejection failed', message });

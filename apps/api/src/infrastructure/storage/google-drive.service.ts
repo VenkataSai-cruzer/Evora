@@ -151,4 +151,47 @@ export class GoogleDriveService {
     });
     return res.data.webContentLink || '';
   }
+
+  /**
+   * Stream a file's binary content by file ID.
+   * Returns the response stream and MIME type.
+   * Used by the authenticated screenshot proxy endpoint.
+   */
+  async getFileStream(fileId: string): Promise<{
+    stream: NodeJS.ReadableStream;
+    mimeType: string;
+  }> {
+    const res = await this.drive.files.get(
+      { fileId, alt: 'media' },
+      { responseType: 'stream' },
+    );
+
+    const mimeType =
+      res.headers['content-type'] || 'application/octet-stream';
+
+    return {
+      stream: res.data as unknown as NodeJS.ReadableStream,
+      mimeType,
+    };
+  }
+
+  /**
+   * Get file metadata (name, mimeType, size).
+   */
+  async getFileMetadata(fileId: string): Promise<{
+    name: string;
+    mimeType: string;
+    size?: number;
+  }> {
+    const res = await this.drive.files.get({
+      fileId,
+      fields: 'name, mimeType, size',
+    });
+
+    return {
+      name: res.data.name || 'unknown',
+      mimeType: res.data.mimeType || 'application/octet-stream',
+      size: res.data.size ? parseInt(res.data.size, 10) : undefined,
+    };
+  }
 }

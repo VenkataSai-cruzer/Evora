@@ -544,6 +544,65 @@ export async function submitPaymentProof(data: {
   return api.post('/payments/proof', data);
 }
 
+// ── My Proof Status (get from /payments/my-proof/:orderNumber) ──
+
+export interface MyProofStatusResponse {
+  orderNumber: string;
+  orderStatus: string;
+  proof: {
+    status: string;
+    utrNumber: string;
+    submittedAt: string;
+    rejectionReason?: string;
+  } | null;
+}
+
+export async function getMyProofStatus(orderNumber: string): Promise<MyProofStatusResponse> {
+  return api.get(`/payments/my-proof/${orderNumber}`);
+}
+
+// ── Order by Number ────────────────────────────────────
+
+export interface OrderDetailResponse {
+  order: {
+    id: string;
+    orderNumber: string;
+    status: string;
+    total: number;
+    currency: string;
+    subtotal: number;
+    fees: number;
+    resubmissionCount?: number;
+    createdAt: string;
+    updatedAt: string;
+    event: {
+      title: string;
+      slug: string;
+    };
+    attendees: Array<{
+      id: string;
+      attendeeName: string;
+      attendeeEmail: string | null;
+      ticketTypeId: string;
+    }>;
+    tickets: Array<{
+      id: string;
+      ticketNumber: string;
+      status: string;
+    }>;
+    payments: Array<{
+      id: string;
+      utrNumber: string | null;
+      status: string;
+      createdAt: string;
+    }>;
+  };
+}
+
+export async function getOrderByNumber(orderNumber: string): Promise<OrderDetailResponse> {
+  return api.get(`/orders/${orderNumber}`);
+}
+
 // ── Admin Orders ────────────────────────────────────────
 
 export interface AdminOrderListItem {

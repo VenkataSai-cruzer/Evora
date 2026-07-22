@@ -66,9 +66,11 @@ export async function finalizeApprovedOrder(
         };
       }
 
-      if (order.status !== 'PENDING_PAYMENT') {
+      // Accept: PENDING_PAYMENT (initial), PENDING_VERIFICATION (after proof), REJECTED (resubmission approved)
+      const validStates = ['PENDING_PAYMENT', 'PENDING_VERIFICATION', 'REJECTED'];
+      if (!validStates.includes(order.status)) {
         throw new Error(
-          `Order status is "${order.status}" — cannot approve. Only PENDING_PAYMENT orders can be approved.`,
+          `Order status is "${order.status}" — cannot approve. Only PENDING_PAYMENT, PENDING_VERIFICATION, or REJECTED orders can be approved.`,
         );
       }
 
