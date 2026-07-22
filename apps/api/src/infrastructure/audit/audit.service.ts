@@ -24,7 +24,9 @@ export type AuditAction =
   | 'USER_STATUS_CHANGED'
   | 'ORDER_CREATED'
   | 'ORDER_CONFIRMED'
-  | 'ORDER_CANCELLED';
+  | 'ORDER_CANCELLED'
+  | 'SCREENSHOT_VIEWED'
+  | 'DUPLICATE_UTR_DETECTED';
 
 interface AuditContext {
   actorId?: string;
