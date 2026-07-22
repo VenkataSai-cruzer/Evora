@@ -1,193 +1,384 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { api } from '@/lib/api-client';
-import { formatDate } from '@/lib/dates';
+import { api, checkUtr } from '@/lib/api-client';
+import {
+  VerificationStats,
+  VerificationFilters,
+  VerificationQueue,
+  OrderSummaryCard,
+  PaymentDetailsCard,
+  ScreenshotViewer,
+  DuplicateUtrWarning,
+  PaymentHistoryTimeline,
+  ApprovalDialog,
+  RejectDialog,
+  ResubmissionDialog,
+} from '@/components/verifications';
 
 export default function AdminVerificationsPage() {
+  // ── State ─────────────────────────────────────────────────
   const [orders, setOrders] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [rejectModal, setRejectModal] = useState<{ id: string; orderNumber: string } | null>(null);
-  const [rejectReason, setRejectReason] = useState('');
-  const [filter, setFilter] = useState('PENDING_PAYMENT');
   const [error, setError] = useState('');
+  const [actionLoading, setActionLoading] = useState(false);
+  const [filter, setFilter] = useState('PENDING_PAYMENT');
+  const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
+  const [orderDetail, setOrderDetail] = useState<any | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
 
-  const load = useCallback(async () => {
+  // Stats (unfiltered counts)
+  const [stats, setStats] = useState({
+    pending: 0,
+    pendingVerification: 0,
+    approved: 0,
+    rejected: 0,
+  });
+
+  // Duplicate UTR
+  const [utrCheck, setUtrCheck] = useState<{
+    loading: boolean;
+    result: any | null;
+  }>({ loading: false, result: null });
+
+  // Dialogs
+  const [showApproval, setShowApproval] = useState(false);
+  const [showReject, setShowReject] = useState(false);
+  const [showResubmit, setShowResubmit] = useState(false);
+
+  // ── Data Loading ───────────────────────────────────────────
+  const loadOrders = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const res = await api.get<{ orders: any[]; total: number }>(`/admin/orders?status=${filter}&limit=50`);
+      // Fetch filtered orders for queue
+      const [res, statsRes] = await Promise.all([
+        api.get<{ orders: any[]; total: number }>(
+          `/admin/orders?status=${filter}&limit=50`,
+        ),
+        // Fetch unfiltered count for stats (limit=1, no filter = all)
+        api.get<{ orders: any[]; total: number }>('/admin/orders?limit=200').catch(() => null),
+      ]);
       setOrders(res.orders);
       setTotal(res.total);
-    } catch {
-      setError('Failed to load orders');
+
+      // Compute stats from unfiltered data
+      if (statsRes) {
+        const s = { pending: 0, pendingVerification: 0, approved: 0, rejected: 0 };
+        for (const o of statsRes.orders) {
+          if (o.status === 'PENDING_PAYMENT') s.pending++;
+          else if (o.status === 'PENDING_VERIFICATION') s.pendingVerification++;
+          else if (o.status === 'CONFIRMED') s.approved++;
+          else if (o.status === 'REJECTED') s.rejected++;
+        }
+        setStats(s);
+      }
+
+      // If the selected order is no longer in the list, deselect
+      if (selectedOrder && !res.orders.find((o: any) => o.id === selectedOrder.id)) {
+        setSelectedOrder(null);
+        setOrderDetail(null);
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to load orders');
     } finally {
       setLoading(false);
     }
   }, [filter]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { loadOrders(); }, [loadOrders]);
 
-  async function handleApprove(id: string) {
-    setActionLoading(id);
+  // Load order detail when selected
+  useEffect(() => {
+    if (!selectedOrder) return;
+
+    setDetailLoading(true);
+    setUtrCheck({ loading: false, result: null });
+
+    api
+      .get<{ order: any }>(`/admin/orders/${selectedOrder.id}`)
+      .then((res) => {
+        setOrderDetail(res.order);
+        // Check UTR for duplicates
+        const utr = res.order?.paymentProof?.utrNumber;
+        if (utr) {
+          setUtrCheck((prev) => ({ ...prev, loading: true }));
+          checkUtr(utr)
+            .then((result) => setUtrCheck({ loading: false, result }))
+            .catch(() => setUtrCheck({ loading: false, result: null }));
+        }
+      })
+      .catch(() => setOrderDetail(null))
+      .finally(() => setDetailLoading(false));
+  }, [selectedOrder?.id]);
+
+  // ── Actions ─────────────────────────────────────────────────
+  async function handleApprove() {
+    if (!selectedOrder) return;
+    setActionLoading(true);
     setError('');
     try {
-      await api.post(`/admin/orders/${id}/approve`, {});
-      await load();
+      await api.post(`/admin/orders/${selectedOrder.id}/approve`, {
+        expectedProofUpdatedAt: orderDetail?.paymentProof?.updatedAt,
+      });
+      setShowApproval(false);
+      setSelectedOrder(null);
+      setOrderDetail(null);
+      await loadOrders();
     } catch (err: any) {
       setError(err.message || 'Approval failed');
     } finally {
-      setActionLoading(null);
+      setActionLoading(false);
     }
   }
 
-  async function handleReject() {
-    if (!rejectModal) return;
-    if (!rejectReason.trim()) { setError('Please enter a rejection reason'); return; }
-    setActionLoading(rejectModal.id);
+  async function handleReject(reason: string, customMessage?: string) {
+    if (!selectedOrder) return;
+    setActionLoading(true);
     setError('');
     try {
-      await api.post(`/admin/orders/${rejectModal.id}/reject`, { reason: rejectReason });
-      setRejectModal(null);
-      setRejectReason('');
-      await load();
+      await api.post(`/admin/orders/${selectedOrder.id}/reject`, {
+        reason: customMessage ? `${reason} — ${customMessage}` : reason,
+      });
+      setShowReject(false);
+      setSelectedOrder(null);
+      setOrderDetail(null);
+      await loadOrders();
     } catch (err: any) {
       setError(err.message || 'Rejection failed');
     } finally {
-      setActionLoading(null);
+      setActionLoading(false);
     }
   }
 
+  async function handleRequestResubmission(message?: string) {
+    if (!selectedOrder) return;
+    setActionLoading(true);
+    setError('');
+    try {
+      await api.post(`/admin/orders/${selectedOrder.id}/request-resubmission`, {
+        message,
+      });
+      setShowResubmit(false);
+      setSelectedOrder(null);
+      setOrderDetail(null);
+      await loadOrders();
+    } catch (err: any) {
+      setError(err.message || 'Request failed');
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  // ── Derived state ────────────────────────────────────────────
+  const proof = orderDetail?.paymentProof || selectedOrder?.paymentProof || null;
+  const attendees = orderDetail?.attendees || selectedOrder?.attendees || [];
+  const isPending =
+    selectedOrder?.status === 'PENDING_PAYMENT' ||
+    selectedOrder?.status === 'PENDING_VERIFICATION';
+
+  const filterOptions = [
+    { value: 'PENDING_PAYMENT', label: 'Awaiting Payment' },
+    { value: 'PENDING_VERIFICATION', label: 'Pending Verification' },
+    { value: 'CONFIRMED', label: 'Approved' },
+    { value: 'REJECTED', label: 'Rejected' },
+    { value: '', label: 'All' },
+  ];
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Payment Verifications</h1>
-          <p className="mt-1 text-sm text-text-secondary">Review UTR submissions and approve tickets</p>
+          <p className="mt-1 text-sm text-text-secondary">
+            Review UTR submissions and approve tickets
+          </p>
         </div>
       </div>
 
-      {/* Filter Tabs */}
-      <div className="flex gap-2 flex-wrap">
-        {[['PENDING_PAYMENT', 'Pending'], ['CONFIRMED', 'Approved'], ['CANCELLED', 'Rejected']].map(([status, label]) => (
-          <button key={status} onClick={() => setFilter(status)}
-            className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${filter === status ? 'bg-primary text-white' : 'bg-surface-elevated text-text-secondary hover:text-white'}`}>
-            {label}
-          </button>
-        ))}
-        <button onClick={load} className="ml-auto rounded-lg bg-surface-elevated px-3 py-1.5 text-xs text-text-secondary hover:text-white transition-colors">Refresh</button>
-      </div>
+      {/* Stats — unfiltered counts */}
+      <VerificationStats
+        pendingCount={stats.pending}
+        pendingVerificationCount={stats.pendingVerification}
+        approvedCount={stats.approved}
+        rejectedCount={stats.rejected}
+        totalCount={total}
+        loading={loading && orders.length === 0}
+      />
 
-      {error && <div className="rounded-lg bg-error/10 px-4 py-3 text-sm text-error">{error}</div>}
+      {/* Filters */}
+      <VerificationFilters
+        statusOptions={filterOptions}
+        activeStatus={filter}
+        onStatusChange={(s) => { setFilter(s); setSelectedOrder(null); setOrderDetail(null); }}
+        onRefresh={loadOrders}
+        loading={loading}
+      />
 
-      {loading ? (
-        <div className="space-y-2">{[1, 2, 3].map(i => <div key={i} className="h-24 animate-pulse rounded-xl bg-surface-elevated" />)}</div>
-      ) : orders.length > 0 ? (
-        <div className="space-y-3">
-          {orders.map((order) => {
-            const proof = order.paymentProof;
-            return (
-              <div key={order.id} className="rounded-xl border border-[var(--color-border)] bg-surface p-4">
-                <div className="flex items-start gap-4">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="text-sm font-semibold text-white">{order.event?.title}</p>
-                      <span className={`text-xs rounded-full px-2 py-0.5 font-medium ${order.status === 'PENDING_PAYMENT' ? 'bg-warning/10 text-warning' : order.status === 'CONFIRMED' ? 'bg-success/10 text-success' : 'bg-error/10 text-error'}`}>
-                        {order.status === 'PENDING_PAYMENT' ? 'Pending' : order.status === 'CONFIRMED' ? 'Approved' : 'Rejected'}
-                      </span>
-                    </div>
-                    <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-text-muted">
-                      <span>Order: <span className="font-mono text-white">{order.orderNumber}</span></span>
-                      <span>{order.user?.name} — {order.user?.email}</span>
-                      {order.user?.phone && <span>📞 {order.user.phone}</span>}
-                      <span>₹{(order.total / 100).toLocaleString()}</span>
-                      <span>{order.attendees?.length || 0} attendee(s)</span>
-                      <span>{formatDate(order.createdAt)}</span>
-                    </div>
-
-                    {/* Attendee names */}
-                    {order.attendees?.length > 0 && (
-                      <div className="mt-2 flex flex-wrap gap-1">
-                        {order.attendees.map((a: any) => (
-                          <span key={a.id} className="rounded-full bg-surface-elevated px-2 py-0.5 text-xs text-text-secondary">
-                            {a.attendeeName}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Payment Proof */}
-                    {proof && (
-                      <div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg border border-[var(--color-border)] bg-surface-elevated p-3">
-                        <div className="text-xs space-y-0.5">
-                          <p className="text-text-muted">UTR: <span className="font-mono text-primary font-medium">{proof.utrNumber}</span></p>
-                          <p className="text-text-muted">Amount: ₹{(proof.amount / 100).toLocaleString()} · Submitted {formatDate(proof.submittedAt)}</p>
-                          <p className="text-text-muted">
-                            Status: <span className={`font-medium ${proof.status === 'APPROVED' ? 'text-success' : proof.status === 'REJECTED' ? 'text-error' : 'text-warning'}`}>{proof.status}</span>
-                          </p>
-                          {proof.rejectionReason && <p className="text-error text-xs">Rejection reason: {proof.rejectionReason}</p>}
-                        </div>
-                        {proof.googleDriveViewUrl && (
-                          <a href={proof.googleDriveViewUrl} target="_blank" rel="noopener noreferrer"
-                            className="ml-auto rounded-lg bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/20 transition-colors">
-                            View Screenshot ↗
-                          </a>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Actions */}
-                  {order.status === 'PENDING_PAYMENT' && (
-                    <div className="flex flex-col gap-2 flex-shrink-0">
-                      <button onClick={() => handleApprove(order.id)} disabled={actionLoading === order.id}
-                        className="rounded-lg bg-success px-4 py-1.5 text-xs font-medium text-white hover:bg-success/90 disabled:opacity-50 transition-colors">
-                        {actionLoading === order.id ? '...' : 'Approve'}
-                      </button>
-                      <button onClick={() => setRejectModal({ id: order.id, orderNumber: order.orderNumber })} disabled={actionLoading === order.id}
-                        className="rounded-lg border border-[var(--color-border)] px-4 py-1.5 text-xs text-text-secondary hover:bg-surface-hover hover:text-white disabled:opacity-50 transition-colors">
-                        Reject
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      ) : (
-        <div className="rounded-xl border border-[var(--color-border)] bg-surface p-12 text-center">
-          <p className="text-text-muted">No {filter === 'PENDING_PAYMENT' ? 'pending' : filter === 'CONFIRMED' ? 'approved' : 'rejected'} orders.</p>
+      {error && (
+        <div className="rounded-lg bg-error/10 border border-error/20 px-4 py-3 text-xs text-error">
+          {error}
         </div>
       )}
 
-      {total > orders.length && <p className="text-center text-xs text-text-muted">Showing {orders.length} of {total}</p>}
-
-      {/* Reject Modal */}
-      {rejectModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md rounded-xl border border-[var(--color-border)] bg-surface p-6 shadow-2xl">
-            <h3 className="text-lg font-semibold text-white">Reject Payment</h3>
-            <p className="mt-1 text-sm text-text-secondary">Order: <span className="font-mono">{rejectModal.orderNumber}</span></p>
-            <div className="mt-4">
-              <label className="mb-1.5 block text-sm text-text-secondary">Reason <span className="text-error">*</span></label>
-              <textarea value={rejectReason} onChange={(e) => setRejectReason(e.target.value)}
-                placeholder="e.g., UTR mismatch, insufficient amount, duplicate transaction"
-                className="w-full rounded-lg border border-[var(--color-border)] bg-surface px-3 py-2.5 text-sm text-white placeholder:text-text-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary resize-none" rows={3} />
-            </div>
-            <div className="mt-4 flex justify-end gap-2">
-              <button onClick={() => { setRejectModal(null); setRejectReason(''); setError(''); }}
-                className="rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm text-text-secondary hover:bg-surface-hover hover:text-white transition-colors">Cancel</button>
-              <button onClick={handleReject} disabled={actionLoading === rejectModal.id || !rejectReason.trim()}
-                className="rounded-lg bg-error px-4 py-2 text-sm font-medium text-white hover:bg-error/90 disabled:opacity-50 transition-colors">
-                {actionLoading === rejectModal.id ? 'Rejecting...' : 'Reject'}
-              </button>
-            </div>
+      {/* Main layout: left queue + right details */}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+        {/* Left: Queue */}
+        <div className="xl:col-span-1">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs text-text-muted">
+              {loading ? 'Loading...' : `${orders.length} order${orders.length !== 1 ? 's' : ''}${total > orders.length ? ` (${total} total)` : ''}`}
+            </p>
           </div>
+          <VerificationQueue
+            orders={orders}
+            selectedId={selectedOrder?.id || null}
+            onSelect={(order) => setSelectedOrder(order)}
+            loading={loading}
+          />
         </div>
-      )}
+
+        {/* Right: Detail Panel */}
+        <div className="xl:col-span-2">
+          {!selectedOrder ? (
+            <div className="rounded-xl border border-[var(--color-border)] bg-surface p-12 text-center">
+              <svg className="mx-auto h-12 w-12 text-text-muted" fill="none" viewBox="0 0 24 24" strokeWidth={1} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5m6 4.125l2.25 2.25m0 0l2.25-2.25M12 13.875V7.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <p className="mt-3 text-sm text-text-muted">
+                Select an order from the queue to review
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {/* Row 1: Order Summary + Payment Details */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <OrderSummaryCard
+                  orderNumber={selectedOrder.orderNumber}
+                  status={selectedOrder.status}
+                  total={selectedOrder.total}
+                  createdAt={selectedOrder.createdAt}
+                  event={selectedOrder.event}
+                  attendees={attendees}
+                  ticketsCount={orderDetail?.tickets?.length}
+                  resubmissionCount={orderDetail?.resubmissionCount || selectedOrder.resubmissionCount}
+                  loading={detailLoading}
+                />
+                <PaymentDetailsCard
+                  proof={proof}
+                  orderTotal={selectedOrder.total}
+                  loading={detailLoading}
+                />
+              </div>
+
+              {/* Screenshot */}
+              <ScreenshotViewer
+                proofId={proof?.id}
+                mimeType={proof?.mimeType}
+                googleDriveViewUrl={proof?.googleDriveViewUrl}
+                loading={detailLoading}
+              />
+
+              {/* Duplicate UTR Warning */}
+              {proof?.utrNumber && utrCheck.result?.duplicate && (
+                <DuplicateUtrWarning
+                  relatedOrder={utrCheck.result?.relatedOrder}
+                  loading={utrCheck.loading}
+                />
+              )}
+
+              {/* Payment History Timeline */}
+              <PaymentHistoryTimeline
+                currentProof={proof}
+                archivedProofs={orderDetail?.paymentProofHistory || []}
+                loading={detailLoading}
+              />
+
+              {/* Actions */}
+              {isPending && (
+                <div className="rounded-xl border border-[var(--color-border)] bg-surface p-4">
+                  <p className="text-xs text-text-muted uppercase tracking-wider mb-3">
+                    Review Actions
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={() => setShowApproval(true)}
+                      disabled={actionLoading}
+                      className="rounded-lg bg-success px-5 py-2 text-sm font-medium text-white hover:bg-success/90 transition-colors disabled:opacity-50"
+                    >
+                      {actionLoading ? 'Processing...' : '✓ Approve'}
+                    </button>
+                    <button
+                      onClick={() => setShowReject(true)}
+                      disabled={actionLoading}
+                      className="rounded-lg border border-[var(--color-border)] bg-surface-elevated px-5 py-2 text-sm font-medium text-error hover:bg-error/10 transition-colors disabled:opacity-50"
+                    >
+                      ✗ Reject
+                    </button>
+                    <button
+                      onClick={() => setShowResubmit(true)}
+                      disabled={actionLoading}
+                      className="rounded-lg border border-[var(--color-border)] bg-surface-elevated px-5 py-2 text-sm font-medium text-orange-400 hover:bg-orange-500/10 transition-colors disabled:opacity-50"
+                    >
+                      ↩ Request Resubmission
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Rejection info on already-rejected orders */}
+              {selectedOrder.status === 'REJECTED' && proof?.rejectionReason && (
+                <div className="rounded-xl border border-error/20 bg-error/5 p-4">
+                  <p className="text-xs font-medium text-error">Order Rejected</p>
+                  <p className="mt-1 text-sm text-text-secondary">
+                    Reason: {proof.rejectionReason}
+                  </p>
+                  <p className="mt-0.5 text-xs text-text-muted">
+                    User can resubmit payment proof.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Dialogs */}
+      <ApprovalDialog
+        open={showApproval}
+        onClose={() => setShowApproval(false)}
+        onConfirm={handleApprove}
+        loading={actionLoading}
+        order={
+          selectedOrder
+            ? {
+                orderNumber: selectedOrder.orderNumber,
+                total: selectedOrder.total,
+                eventTitle: selectedOrder.event?.title,
+                attendeeCount: attendees.length,
+                utrNumber: proof?.utrNumber,
+              }
+            : undefined
+        }
+      />
+
+      <RejectDialog
+        open={showReject}
+        onClose={() => setShowReject(false)}
+        onReject={handleReject}
+        loading={actionLoading}
+        orderNumber={selectedOrder?.orderNumber}
+      />
+
+      <ResubmissionDialog
+        open={showResubmit}
+        onClose={() => setShowResubmit(false)}
+        onRequest={handleRequestResubmission}
+        loading={actionLoading}
+        orderNumber={selectedOrder?.orderNumber}
+      />
     </div>
   );
 }

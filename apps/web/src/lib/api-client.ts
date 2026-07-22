@@ -674,6 +674,32 @@ export async function submitContact(data: {
   return api.post('/contact', data);
 }
 
+// ── Duplicate UTR Check (Phase 4.3A) ────────────────────
+
+export interface UtrCheckResponse {
+  duplicate: boolean;
+  relatedOrder: {
+    orderNumber: string;
+    eventTitle: string;
+    status: string;
+  } | null;
+  submissionCount: number;
+}
+
+export async function checkUtr(utr: string): Promise<UtrCheckResponse> {
+  return api.get(`/payments/check-utr/${encodeURIComponent(utr)}`);
+}
+
+// ── Screenshot Proxy URL Helper (Phase 4.3A) ────────────
+
+/**
+ * Returns the authenticated screenshot URL for a payment proof.
+ * The actual image is served via the backend proxy (no direct Drive URL).
+ */
+export function getProofImageUrl(proofId: string): string {
+  return `${API_BASE_URL}/payments/proofs/${proofId}/image`;
+}
+
 // ── Test Payment ────────────────────────────────────────
 
 export async function testPayment(orderId: string): Promise<{ status: string; message: string }> {
