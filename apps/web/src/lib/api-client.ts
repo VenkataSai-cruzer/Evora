@@ -700,6 +700,41 @@ export function getProofImageUrl(proofId: string): string {
   return `${API_BASE_URL}/payments/proofs/${proofId}/image`;
 }
 
+// ── User Dashboard (Phase 4.4) ───────────────────────────
+
+export interface UserDashboardResponse {
+  orders: any[];
+  tickets: any[];
+  events: any[];
+  stats: {
+    pendingPayments: number;
+    approvedPayments: number;
+    rejectedPayments: number;
+    activeTickets: number;
+    totalOrders: number;
+  };
+}
+
+export async function getUserDashboard(): Promise<UserDashboardResponse> {
+  return api.get('/users/me/dashboard');
+}
+
+export async function getUserOrders(): Promise<{ orders: any[] }> {
+  return api.get('/users/me/orders');
+}
+
+export async function getUserOrder(orderNumber: string): Promise<{ order: any }> {
+  return api.get(`/users/me/orders/${encodeURIComponent(orderNumber)}`);
+}
+
+export async function getUserTickets(): Promise<{ tickets: any[] }> {
+  return api.get('/users/me/tickets');
+}
+
+export async function getUserPayments(): Promise<{ payments: any[]; proofPayments: any[] }> {
+  return api.get('/users/me/payments');
+}
+
 // ── Test Payment ────────────────────────────────────────
 
 export async function testPayment(orderId: string): Promise<{ status: string; message: string }> {
