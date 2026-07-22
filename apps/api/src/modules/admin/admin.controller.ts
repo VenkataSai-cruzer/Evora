@@ -284,7 +284,7 @@ export class AdminController {
           event: { select: { id: true, title: true, slug: true } },
           attendees: { include: { ticketType: { select: { name: true, price: true } } } },
           paymentProof: { select: { id: true, utrNumber: true, amount: true, status: true, submittedAt: true, rejectionReason: true, googleDriveViewUrl: true, mimeType: true } },
-          paymentProofHistory: { orderBy: { submittedAt: 'asc' } },
+          paymentProofHistory: { orderBy: { submittedAt: 'asc' }, include: { reviewedBy: { select: { name: true } } } },
           payments: { where: { method: 'utr' }, orderBy: { createdAt: 'desc' }, take: 1 },
         },
       }),
@@ -308,7 +308,7 @@ export class AdminController {
         attendees: { include: { ticketType: { select: { name: true, price: true } } } },
         tickets: { select: { id: true, ticketNumber: true, ticketCategory: true, status: true } },
         paymentProof: true,
-        paymentProofHistory: { orderBy: { submittedAt: 'asc' } },
+        paymentProofHistory: { orderBy: { submittedAt: 'asc' }, include: { reviewedBy: { select: { name: true } } } },
         payments: { orderBy: { createdAt: 'desc' } },
       },
     });

@@ -42,6 +42,12 @@ export default function AdminVerificationsPage() {
     result: any | null;
   }>({ loading: false, result: null });
 
+  // Ticket link after approval
+  const [lastApproval, setLastApproval] = useState<{
+    ticketNumbers: string[];
+    orderNumber: string;
+  } | null>(null);
+
   // Dialogs
   const [showApproval, setShowApproval] = useState(false);
   const [showReject, setShowReject] = useState(false);
@@ -119,15 +125,31 @@ export default function AdminVerificationsPage() {
     setActionLoading(true);
     setError('');
     try {
-      await api.post(`/admin/orders/${selectedOrder.id}/approve`, {
+      const res = await api.post<{
+        success: boolean;
+        message: string;
+        data?: { orderNumber: string; ticketsCreated: number; ticketNumbers: string[] };
+      }>(`/admin/orders/${selectedOrder.id}/approve`, {
         expectedProofUpdatedAt: orderDetail?.paymentProof?.updatedAt,
       });
       setShowApproval(false);
+      // Save ticket info for display
+      if (res.data?.ticketNumbers?.length) {
+        setLastApproval({
+          ticketNumbers: res.data.ticketNumbers,
+          orderNumber: res.data.orderNumber,
+        });
+      }
       setSelectedOrder(null);
       setOrderDetail(null);
       await loadOrders();
     } catch (err: any) {
-      setError(err.message || 'Approval failed');
+      // Handle 409 Conflict specifically
+      if (err.message?.includes('409') || err.statusCode === 409) {
+        setError('This payment was modified or reviewed by another user. Refresh the order to view its latest status.');
+      } else {
+        setError(err.message || 'Approval failed');
+      }
     } finally {
       setActionLoading(false);
     }
@@ -177,6 +199,9 @@ export default function AdminVerificationsPage() {
   const isPending =
     selectedOrder?.status === 'PENDING_PAYMENT' ||
     selectedOrder?.status === 'PENDING_VERIFICATION';
+  const isUtrAlreadyApproved =
+    utrCheck.result?.relatedOrder?.status === 'APPROVED' ||
+    utrCheck.result?.relatedOrder?.status === 'SUCCEEDED';
 
   const filterOptions = [
     { value: 'PENDING_PAYMENT', label: 'Awaiting Payment' },
@@ -285,6 +310,8 @@ export default function AdminVerificationsPage() {
               {proof?.utrNumber && utrCheck.result?.duplicate && (
                 <DuplicateUtrWarning
                   relatedOrder={utrCheck.result?.relatedOrder}
+                  submissionCount={utrCheck.result?.submissionCount}
+                  isAlreadyApproved={utrCheck.result?.relatedOrder?.status === 'APPROVED' || utrCheck.result?.relatedOrder?.status === 'SUCCEEDED'}
                   loading={utrCheck.loading}
                 />
               )}
@@ -305,10 +332,15 @@ export default function AdminVerificationsPage() {
                   <div className="flex flex-wrap gap-2">
                     <button
                       onClick={() => setShowApproval(true)}
-                      disabled={actionLoading}
-                      className="rounded-lg bg-success px-5 py-2 text-sm font-medium text-white hover:bg-success/90 transition-colors disabled:opacity-50"
+                      disabled={actionLoading || isUtrAlreadyApproved}
+                      className={`rounded-lg px-5 py-2 text-sm font-medium transition-colors disabled:opacity-50 ${
+                        isUtrAlreadyApproved
+                          ? 'bg-error/10 text-error border border-error/20 cursor-not-allowed'
+                          : 'bg-success text-white hover:bg-success/90'
+                      }`}
+                      title={isUtrAlreadyApproved ? 'This UTR is already approved on another order. Approval blocked.' : 'Approve payment'}
                     >
-                      {actionLoading ? 'Processing...' : '✓ Approve'}
+                      {actionLoading ? 'Processing...' : isUtrAlreadyApproved ? 'UTR Already Approved' : '✓ Approve'}
                     </button>
                     <button
                       onClick={() => setShowReject(true)}
@@ -324,6 +356,37 @@ export default function AdminVerificationsPage() {
                     >
                       ↩ Request Resubmission
                     </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Ticket approval success banner */}
+              {lastApproval && (
+                <div className="rounded-xl border border-success/20 bg-success/5 p-4">
+                  <div className="flex items-center gap-2">
+                    <svg className="h-5 w-5 text-success" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <p className="text-sm font-medium text-success">Tickets Generated</p>
+                  </div>
+                  <div className="mt-2 text-xs text-text-secondary space-y-1">
+                    <p>Order: <span className="font-mono">{lastApproval.orderNumber}</span></p>
+                    <div className="flex flex-wrap gap-2 mt-1">
+                      {lastApproval.ticketNumbers.map((num) => (
+                        <a
+                          key={num}
+                          href={`/tickets/${num}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 rounded-md bg-success/10 border border-success/20 px-2.5 py-1 font-mono text-2xs text-success hover:bg-success/20 transition-colors"
+                        >
+                          <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+                          </svg>
+                          {num}
+                        </a>
+                      ))}
+                    </div>
                   </div>
                 </div>
               )}
