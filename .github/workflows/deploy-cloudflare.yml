@@ -2,7 +2,7 @@ name: Deploy Frontend to Cloudflare Workers
 
 on:
   push:
-    branches: [deployment/final-cloudflare-render-architecture, main]
+    branches: [deployment/final-cloudflare-render-architecture, master]
     paths:
       - 'apps/web/**'
       - 'packages/shared/**'
