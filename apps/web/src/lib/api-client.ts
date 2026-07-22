@@ -508,19 +508,67 @@ export async function listContactRequests(params?: {
   }
 }
 
-// ── Check-in ────────────────────────────────────────────
+// ── Check-in / Scanner (Phase 4.6) ─────────────────────
 
-export interface CheckInResult {
-  result: 'VALID' | 'ALREADY_CHECKED_IN' | 'INVALID';
-  message: string;
-  attendeeName?: string;
-  ticketType?: string;
-  ticketNumber?: string;
-  checkedInAt?: string;
+export interface ScannerEvent {
+  id: string;
+  title: string;
+  slug: string;
+  startAt: string;
+  venueName: string;
+  status?: string;
+  gateName?: string;
 }
 
-export async function verifyQr(qrToken: string): Promise<CheckInResult> {
-  return api.post('/check-in/verify', { qrToken });
+export interface CheckInVerifyResponse {
+  result: 'SUCCESS' | 'ALREADY_CHECKED_IN' | 'INVALID_TICKET' | 'WRONG_EVENT' | 'CANCELLED' | 'EXPIRED' | 'NOT_ACTIVE';
+  message: string;
+  attendeeName?: string;
+  attendeeEmail?: string;
+  ticketType?: string;
+  ticketNumber?: string;
+  ticketCategory?: string;
+  event?: string;
+  checkedInAt?: string;
+  checkedInBy?: string;
+  gateName?: string;
+  originalCheckedInAt?: string;
+  originalCheckedInBy?: string;
+  originalGateName?: string;
+  currentScanAt?: string;
+  error?: string;
+}
+
+/**
+ * Verify a ticket QR code at the scanner.
+ * Sends the opaque QR token + eventId. Backend hashes the token,
+ * looks up the ticket, and atomically checks in if valid.
+ */
+export async function checkInTicket(data: {
+  qrToken: string;
+  eventId: string;
+  gateName?: string;
+  scannerDevice?: string;
+}): Promise<CheckInVerifyResponse> {
+  return api.post('/check-in/verify', data);
+}
+
+/**
+ * Manual check-in by ticket number (fallback when QR won't scan).
+ */
+export async function manualCheckIn(data: {
+  ticketNumber: string;
+  eventId: string;
+  gateName?: string;
+}): Promise<CheckInVerifyResponse> {
+  return api.post('/check-in/manual', data);
+}
+
+/**
+ * Get events the current scanner is assigned to.
+ */
+export async function getScannerEvents(): Promise<{ events: ScannerEvent[] }> {
+  return api.get('/check-in/scanner/events');
 }
 
 // ── Payment Proof (UTR) ────────────────────────────────
