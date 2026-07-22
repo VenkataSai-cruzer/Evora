@@ -8,10 +8,7 @@ export function StagingBanner() {
 
   useEffect(() => {
     setIsStaging(
-      process.env.NEXT_PUBLIC_APP_ENV === 'staging' ||
-      window.location.hostname.includes('workers.dev') ||
-      window.location.hostname.includes('onrender.com') ||
-      window.location.hostname === 'localhost'
+      process.env.NEXT_PUBLIC_APP_ENV === 'staging'
     );
   }, []);
 
