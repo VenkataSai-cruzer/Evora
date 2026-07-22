@@ -37,8 +37,21 @@ export async function buildApp() {
 
   // ── Plugins ──────────────────────────────────────────
 
+  const ALLOWED_ORIGINS = [
+    'http://localhost:3000',
+    'http://localhost:5173',
+    'https://evora.7notes.workers.dev',
+    ...(process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',').map((s) => s.trim()) : []),
+  ];
+
   await app.register(cors, {
-    origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+    origin: (origin: string | undefined, cb: (err: Error | null, allow: boolean) => void) => {
+      // Allow requests with no origin (server-to-server, curl, etc.)
+      if (!origin || ALLOWED_ORIGINS.includes(origin)) {
+        return cb(null, true);
+      }
+      return cb(null, false);
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token'],
