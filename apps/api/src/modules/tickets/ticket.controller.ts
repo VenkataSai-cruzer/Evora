@@ -1,5 +1,7 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { prisma } from '../../infrastructure/database/prisma.js';
+import { generateQrCodeDataUrl } from '../../infrastructure/rendering/qr.service.js';
+import { renderTicketHtml } from '../../infrastructure/rendering/ticket.service.js';
 
 export class TicketController {
   async list(request: FastifyRequest, _reply: FastifyReply) {
@@ -87,7 +89,7 @@ export class TicketController {
       return reply.status(404).send({ error: 'Ticket not found' });
     }
 
-    if (ticket.userId !== request.user!.id) {
+    if (ticket.userId !== request.user!.id && request.user!.role !== 'ADMIN') {
       return reply.status(403).send({ error: 'Access denied' });
     }
 
@@ -95,11 +97,87 @@ export class TicketController {
       return reply.status(404).send({ error: 'Ticket file not yet generated' });
     }
 
-    // For now, return the object keys — R2 signed URL generation will be added in Phase 12
     return {
       ticketNumber: ticket.ticketNumber,
       pngKey: ticket.pngObjectKey,
       pdfKey: ticket.pdfObjectKey,
     };
+  }
+
+  /**
+   * GET /tickets/:ticketNumber/qr
+   * Returns the QR code data URL for the ticket owner.
+   * The raw qrToken is never sent — only the rendered QR image.
+   */
+  async getQrCode(request: FastifyRequest, reply: FastifyReply) {
+    const { ticketNumber } = request.params as { ticketNumber: string };
+
+    const ticket = await prisma.ticket.findUnique({
+      where: { ticketNumber },
+      select: { userId: true, qrToken: true, status: true },
+    });
+
+    if (!ticket) {
+      return reply.status(404).send({ error: 'Ticket not found' });
+    }
+
+    // Only the ticket owner or admin can see the QR
+    if (ticket.userId !== request.user!.id && request.user!.role !== 'ADMIN') {
+      return reply.status(403).send({ error: 'Access denied' });
+    }
+
+    if (!ticket.qrToken) {
+      return reply.status(404).send({ error: 'QR code not available yet' });
+    }
+
+    if (ticket.status === 'CANCELLED' || ticket.status === 'EXPIRED') {
+      return reply.status(400).send({ error: 'Ticket is no longer valid' });
+    }
+
+    const qrDataUrl = await generateQrCodeDataUrl(ticket.qrToken);
+    return { qrCodeUrl: qrDataUrl };
+  }
+
+  /**
+   * GET /tickets/:ticketNumber/html
+   * Render the ticket as HTML (for PDF generation on client or print).
+   */
+  async renderHtml(request: FastifyRequest, reply: FastifyReply) {
+    const { ticketNumber } = request.params as { ticketNumber: string };
+
+    const ticket = await prisma.ticket.findUnique({
+      where: { ticketNumber },
+      include: {
+        event: true,
+        ticketType: true,
+        order: { select: { orderNumber: true } },
+      },
+    });
+
+    if (!ticket) return reply.status(404).send({ error: 'Ticket not found' });
+    if (ticket.userId !== request.user!.id && request.user!.role !== 'ADMIN') {
+      return reply.status(403).send({ error: 'Access denied' });
+    }
+    if (!ticket.qrToken) return reply.status(404).send({ error: 'Ticket not ready' });
+
+    const html = await renderTicketHtml({
+      ticketNumber: ticket.ticketNumber,
+      attendeeName: ticket.attendeeName,
+      attendeeEmail: ticket.attendeeEmail,
+      attendeePhone: ticket.attendeePhone,
+      eventTitle: ticket.event.title,
+      eventDate: ticket.event.startAt.toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }),
+      eventTime: ticket.event.startAt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+      venueName: ticket.event.venueName,
+      venueAddress: ticket.event.venueAddress || '',
+      ticketType: ticket.ticketType.name,
+      ticketCategory: ticket.ticketCategory,
+      orderNumber: ticket.order?.orderNumber,
+      qrToken: ticket.qrToken,
+      terms: ticket.event.terms || undefined,
+    });
+
+    reply.header('Content-Type', 'text/html');
+    return reply.send(html);
   }
 }

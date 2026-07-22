@@ -41,6 +41,14 @@ coverage/
 .DS_Store
 Thumbs.db
 
+# Generated / Temporary files
+uploads/
+*.bak
+*.backup
+*.tmp
+*.copy
+*.orig
+
 # Logs
 *.log
 npm-debug.log*

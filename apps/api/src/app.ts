@@ -3,6 +3,7 @@ import cors from '@fastify/cors';
 import cookie from '@fastify/cookie';
 import rateLimit from '@fastify/rate-limit';
 import formbody from '@fastify/formbody';
+import multipart from '@fastify/multipart';
 
 import { errorHandler } from './middleware/error-handler.js';
 import { csrfProtection } from './middleware/csrf.js';
@@ -10,6 +11,7 @@ import { healthRoutes } from './modules/health/health.routes.js';
 import { authRoutes } from './modules/auth/auth.routes.js';
 import { eventRoutes } from './modules/events/event.routes.js';
 import { adminRoutes } from './modules/admin/admin.routes.js';
+import { organizerRoutes } from './modules/organizer/organizer.routes.js';
 import { orderRoutes } from './modules/orders/order.routes.js';
 import { ticketRoutes } from './modules/tickets/ticket.routes.js';
 import { checkInRoutes } from './modules/check-in/check-in.routes.js';
@@ -17,7 +19,9 @@ import { uploadRoutes } from './modules/uploads/upload.routes.js';
 import { templateRoutes } from './modules/templates/template.routes.js';
 import { ticketTypeRoutes } from './modules/ticket-types/ticket-type.routes.js';
 import { userRoutes } from './modules/users/user.routes.js';
+import { paymentRoutes } from './modules/payments/payment.routes.js';
 import { testPaymentRoutes } from './modules/payments/payment.test.routes.js';
+import { contactRoutes } from './modules/contact/contact.routes.js';
 import { seedStagingData } from './modules/admin/seed.js';
 
 export async function buildApp() {
@@ -45,14 +49,21 @@ export async function buildApp() {
   });
 
   await app.register(rateLimit, {
-    max: 100,
+    max: 200,
     timeWindow: '1 minute',
-    keyGenerator: (request) => {
-      return request.ip;
-    },
+    keyGenerator: (request) => request.ip,
   });
 
   await app.register(formbody);
+
+  // Register multipart for payment proof uploads (max 8MB to allow validation before rejection)
+  await app.register(multipart, {
+    limits: {
+      fileSize: 8 * 1024 * 1024, // 8MB hard limit (validation enforces 5MB soft limit)
+      files: 1,
+      fields: 10,
+    },
+  });
 
   // ── Custom error handler ─────────────────────────────
   app.setErrorHandler(errorHandler);
@@ -73,22 +84,20 @@ export async function buildApp() {
   await app.register(ticketTypeRoutes, { prefix: '/api/v1/ticket-types' });
   await app.register(userRoutes, { prefix: '/api/v1/users' });
   await app.register(adminRoutes, { prefix: '/api/v1/admin' });
+  await app.register(organizerRoutes, { prefix: '/api/v1/organizer' });
+  await app.register(paymentRoutes, { prefix: '/api/v1/payments' });
+  await app.register(contactRoutes, { prefix: '/api/v1/contact' });
 
-  // ── Seed Endpoint (staging only, protected by SEED_API_KEY) ──
+  // ── Seed Endpoint (staging only) ────────────────────
   app.post('/api/v1/admin/seed', async (request, reply) => {
-    // Protect with a secret key so it works without auth
     const seedKey = (request.headers as Record<string, string>)['x-seed-key'];
     const expectedKey = process.env.SEED_API_KEY;
-
     if (expectedKey && seedKey !== expectedKey) {
       return reply.status(401).send({ error: 'Invalid seed key' });
     }
-
-    // Only allow in non-production environments
     if (process.env.NODE_ENV === 'production' && process.env.ALLOW_PRODUCTION_SEED !== 'true') {
       return reply.status(403).send({ error: 'Seed endpoint is disabled in production' });
     }
-
     try {
       const results = await seedStagingData();
       return reply.send({ message: 'Staging data seeded successfully', records: results });

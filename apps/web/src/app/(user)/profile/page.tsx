@@ -1,27 +1,44 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { getSession } from '@/lib/api-client';
-import type { SessionUser } from '@/lib/api-client';
+import { useAuth } from '@/lib/auth-provider';
 
 export default function ProfilePage() {
-  const [session, setSession] = useState<SessionUser | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    getSession().then(setSession).catch(() => {}).finally(() => setLoading(false));
-  }, []);
-
-  if (loading) return <div className="animate-pulse space-y-4"><div className="h-8 w-48 rounded bg-surface-elevated" /><div className="h-32 rounded-xl bg-surface-elevated" /></div>;
+  const { user, signOut } = useAuth();
 
   return (
-    <div>
+    <div className="space-y-6">
       <h1 className="text-2xl font-bold text-white">Profile</h1>
-      <div className="mt-6 space-y-4 rounded-xl border border-[var(--color-border)] bg-surface p-6">
-        <div><p className="text-xs text-text-muted">Name</p><p className="text-sm text-white">{session?.name || '—'}</p></div>
-        <div><p className="text-xs text-text-muted">Email</p><p className="text-sm text-white">{session?.email || '—'}</p></div>
-        <div><p className="text-xs text-text-muted">Role</p><p className="text-sm text-white capitalize">{session?.role?.toLowerCase() || '—'}</p></div>
+
+      <div className="rounded-xl border border-[var(--color-border)] bg-surface p-5">
+        <div className="flex items-center gap-4">
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+            <span className="text-lg font-bold text-primary">
+              {user?.name?.charAt(0)?.toUpperCase() || '?'}
+            </span>
+          </div>
+          <div>
+            <p className="text-lg font-semibold text-white">{user?.name}</p>
+            <p className="text-sm text-text-muted">{user?.email}</p>
+            <span className="mt-1 inline-flex items-center rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
+              {user?.role}
+            </span>
+          </div>
+        </div>
       </div>
+
+      <div className="rounded-xl border border-[var(--color-border)] bg-surface p-5">
+        <h3 className="text-sm font-semibold text-white">Account Settings</h3>
+        <p className="mt-2 text-sm text-text-muted">
+          Account settings and preferences will be available here.
+        </p>
+      </div>
+
+      <button
+        onClick={() => signOut()}
+        className="w-full rounded-lg border border-[var(--color-border)] py-2.5 text-sm font-medium text-text-secondary transition-colors hover:bg-surface-hover hover:text-white"
+      >
+        Sign out
+      </button>
     </div>
   );
 }

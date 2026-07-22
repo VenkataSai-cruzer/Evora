@@ -4,72 +4,72 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { listMyTickets } from '@/lib/api-client';
 import { formatDate } from '@/lib/dates';
-import type { TicketListItem } from '@/lib/api-client';
 
 export default function MyTicketPage() {
-  const [tickets, setTickets] = useState<TicketListItem[]>([]);
+  const [tickets, setTickets] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    async function load() {
-      try {
-        const all = await listMyTickets();
-        setTickets(all);
-      } catch { /* ignore */ }
-      finally { setLoading(false); }
-    }
-    load();
+    listMyTickets()
+      .then(setTickets)
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, []);
 
-  if (loading) return (
-    <div className="animate-pulse space-y-4">
-      <div className="h-8 w-48 rounded bg-surface-elevated" />
-      <div className="h-24 rounded-xl bg-surface-elevated" />
-    </div>
-  );
-
-  const confirmed = tickets.filter(t => t.status === 'CONFIRMED' || t.status === 'CHECKED_IN');
-
-  if (confirmed.length === 0) return (
-    <div>
-      <h1 className="text-2xl font-bold text-white">My Ticket</h1>
-      <p className="mt-4 text-text-secondary">No confirmed tickets yet.</p>
-      <Link href="/events" className="mt-4 inline-block text-sm text-primary hover:text-primary-hover">Browse events &rarr;</Link>
-    </div>
-  );
-
-  const ticket = confirmed[0];
+  if (loading) {
+    return <div className="space-y-3">
+      <div className="h-8 w-32 animate-pulse rounded bg-surface-elevated" />
+      {[1,2].map(i => <div key={i} className="h-24 animate-pulse rounded-xl bg-surface-elevated" />)}
+    </div>;
+  }
 
   return (
-    <div>
-      <h1 className="text-2xl font-bold text-white">My Ticket</h1>
-      <div className="mt-6 overflow-hidden rounded-2xl border border-primary/20 bg-gradient-to-b from-surface to-surface-elevated">
-        <div className="bg-gradient-to-r from-primary/20 to-primary/5 p-5">
-          <h2 className="text-xl font-bold text-white">{ticket.event.title}</h2>
-          <p className="mt-1 text-sm text-text-secondary">{formatDate(ticket.event.startAt)}</p>
+    <div className="space-y-6">
+      <h1 className="text-2xl font-bold text-white">My Tickets</h1>
+
+      {tickets.length > 0 ? (
+        <div className="space-y-3">
+          {tickets.map((ticket) => {
+            const statusColors: Record<string, string> = {
+              CONFIRMED: 'text-success',
+              CHECKED_IN: 'text-primary',
+              PENDING_PAYMENT: 'text-warning',
+              CANCELLED: 'text-error',
+              EXPIRED: 'text-text-muted',
+            };
+            return (
+              <Link
+                key={ticket.id}
+                href={`/tickets/${ticket.ticketNumber}`}
+                className="flex items-center justify-between rounded-xl border border-[var(--color-border)] bg-surface p-4 hover:bg-surface-hover transition-colors"
+              >
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-white truncate">{ticket.event?.title}</p>
+                  <p className="text-xs text-text-muted mt-0.5">
+                    {ticket.event ? formatDate(ticket.event.startAt) : ''} &middot; {ticket.ticketType?.name}
+                  </p>
+                  {ticket.attendee && (
+                    <p className="text-xs text-text-muted mt-0.5">{ticket.attendee.attendeeName}</p>
+                  )}
+                </div>
+                <div className="flex flex-col items-end gap-1">
+                  <span className={`text-xs font-medium ${statusColors[ticket.status] || 'text-text-muted'}`}>
+                    {ticket.status === 'CHECKED_IN' ? 'CHECKED IN' : ticket.status === 'PENDING_PAYMENT' ? 'PENDING' : ticket.status}
+                  </span>
+                  <span className="text-xs text-text-muted font-mono">{ticket.ticketNumber}</span>
+                </div>
+              </Link>
+            );
+          })}
         </div>
-        <div className="p-5 space-y-4">
-          <div className="rounded-xl bg-surface/50 p-4">
-            <p className="text-xs text-text-muted">Ticket Number</p>
-            <p className="mt-1 text-sm font-mono font-medium text-white">{ticket.ticketNumber}</p>
-          </div>
-          <div className="rounded-xl bg-surface/50 p-4">
-            <p className="text-xs text-text-muted">Event</p>
-            <p className="mt-1 text-sm font-medium text-white">{ticket.event.title}</p>
-            <p className="text-xs text-text-secondary">{ticket.event.venueName}</p>
-          </div>
-          {ticket.ticketType && (
-            <div className="rounded-xl bg-surface/50 p-4">
-              <p className="text-xs text-text-muted">Ticket Type</p>
-              <p className="mt-1 text-sm font-medium text-white">{ticket.ticketType.name}</p>
-            </div>
-          )}
-          <Link href={`/tickets/${ticket.ticketNumber}`}
-            className="flex w-full items-center justify-center rounded-lg bg-primary py-3 text-sm font-medium text-white hover:bg-primary-hover">
-            View full pass
+      ) : (
+        <div className="rounded-xl border border-[var(--color-border)] bg-surface p-12 text-center">
+          <p className="text-text-muted">No tickets yet.</p>
+          <Link href="/events" className="mt-4 inline-flex h-10 items-center rounded-lg bg-primary px-5 text-sm font-medium text-white hover:bg-primary-hover">
+            Browse Events
           </Link>
         </div>
-      </div>
+      )}
     </div>
   );
 }

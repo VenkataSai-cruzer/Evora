@@ -6,7 +6,7 @@ import { useAuth } from '@/lib/auth-provider';
 
 interface AuthGuardProps {
   children: React.ReactNode;
-  requiredRole?: string;
+  requiredRole?: string | string[];
   fallback?: React.ReactNode;
 }
 
@@ -35,9 +35,11 @@ export function AuthGuard({ children, requiredRole, fallback }: AuthGuardProps) 
     if (loading) return;
     if (!user) {
       router.replace(`/auth/login?callbackUrl=${encodeURIComponent(pathname)}`);
-    } else if (requiredRole && user.role !== requiredRole) {
-      // Role mismatch — redirect non-admin users away from admin pages
-      router.replace('/');
+    } else if (requiredRole) {
+      const allowed = Array.isArray(requiredRole) ? requiredRole : [requiredRole];
+      if (!allowed.includes(user.role)) {
+        router.replace('/');
+      }
     }
   }, [user, loading, router, pathname, requiredRole]);
 
@@ -61,8 +63,9 @@ export function AuthGuard({ children, requiredRole, fallback }: AuthGuardProps) 
   }
 
   // Role mismatch — render nothing while redirect triggers
-  if (requiredRole && user.role !== requiredRole) {
-    return null;
+  if (requiredRole) {
+    const allowed = Array.isArray(requiredRole) ? requiredRole : [requiredRole];
+    if (!allowed.includes(user.role)) return null;
   }
 
   return <>{children}</>;

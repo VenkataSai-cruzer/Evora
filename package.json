@@ -2,8 +2,7 @@
   "name": "jamming",
   "private": true,
   "workspaces": [
-    "apps/*",
-    "packages/*"
+    "apps/*"
   ],
   "scripts": {
     "prepare": "husky",

@@ -15,8 +15,19 @@ export async function ticketRoutes(app: FastifyInstance) {
     handler: controller.getByNumber.bind(controller),
   });
 
+  app.get('/:ticketNumber/qr', {
+    preHandler: [requireAuth],
+    handler: controller.getQrCode.bind(controller),
+  });
+
+  app.get('/:ticketNumber/html', {
+    preHandler: [requireAuth],
+    handler: controller.renderHtml.bind(controller),
+  });
+
   app.get('/:ticketNumber/download', {
     preHandler: [requireAuth],
     handler: controller.download.bind(controller),
   });
 }
+

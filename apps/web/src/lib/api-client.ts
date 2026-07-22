@@ -359,6 +359,7 @@ export interface OrderResponse {
 export async function createOrder(data: {
   eventId: string;
   ticketTypeId: string;
+  quantity: number;
   attendees: { name: string; email?: string }[];
   utrNumber?: string;
 }): Promise<OrderResponse> {
@@ -510,19 +511,108 @@ export async function listContactRequests(params?: {
 // ── Check-in ────────────────────────────────────────────
 
 export interface CheckInResult {
-  status: 'VALID' | 'ALREADY_CHECKED_IN' | 'INVALID' | 'WRONG_EVENT' | 'PAYMENT_NOT_CONFIRMED' | 'TICKET_DISABLED';
-  ticket?: {
-    ticketNumber: string;
-    attendeeName: string;
-    ticketType: string;
-    eventTitle: string;
-    checkedInAt?: string;
-  };
-  message?: string;
+  result: 'VALID' | 'ALREADY_CHECKED_IN' | 'INVALID';
+  message: string;
+  attendeeName?: string;
+  ticketType?: string;
+  ticketNumber?: string;
+  checkedInAt?: string;
 }
 
-export async function verifyQr(token: string): Promise<CheckInResult> {
-  return api.post('/check-in/verify', { token });
+export async function verifyQr(qrToken: string): Promise<CheckInResult> {
+  return api.post('/check-in/verify', { qrToken });
+}
+
+// ── Payment Proof (UTR) ────────────────────────────────
+
+export interface PaymentProofResponse {
+  payment: {
+    id: string;
+    amount: number;
+    currency: string;
+    method: string;
+    status: string;
+    utrNumber: string;
+    createdAt: string;
+  };
+}
+
+export async function submitPaymentProof(data: {
+  orderNumber: string;
+  utrNumber: string;
+}): Promise<PaymentProofResponse> {
+  return api.post('/payments/proof', data);
+}
+
+// ── Admin Orders ────────────────────────────────────────
+
+export interface AdminOrderListItem {
+  id: string;
+  orderNumber: string;
+  status: string;
+  total: number;
+  currency: string;
+  createdAt: string;
+  user: { id: string; name: string; email: string };
+  event: { id: string; title: string; slug: string };
+  attendees: Array<{ id: string; attendeeName: string }>;
+  payments: Array<{ id: string; utrNumber: string | null; status: string; createdAt: string }>;
+}
+
+export interface AdminOrdersListResponse {
+  orders: AdminOrderListItem[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export async function listAdminOrders(params?: {
+  status?: string;
+  eventId?: string;
+  page?: number;
+  limit?: number;
+}): Promise<AdminOrdersListResponse> {
+  const searchParams = new URLSearchParams();
+  if (params?.status) searchParams.set('status', params.status);
+  if (params?.eventId) searchParams.set('eventId', params.eventId);
+  if (params?.page) searchParams.set('page', String(params.page));
+  if (params?.limit) searchParams.set('limit', String(params.limit));
+  const qs = searchParams.toString();
+  return api.get(`/admin/orders${qs ? `?${qs}` : ''}`);
+}
+
+export interface AdminOrderActionResponse {
+  success: boolean;
+  message: string;
+  data?: {
+    order: { id: string; orderNumber: string; status: string };
+    ticketsCreated: number;
+    paymentId: string | null;
+  };
+}
+
+export async function approveOrder(id: string): Promise<AdminOrderActionResponse> {
+  return api.post(`/admin/orders/${id}/approve`);
+}
+
+export async function rejectOrder(id: string, reason?: string): Promise<AdminOrderActionResponse> {
+  return api.post(`/admin/orders/${id}/reject`, { reason });
+}
+
+// ── Contact ─────────────────────────────────────────────
+
+export interface ContactSubmitResponse {
+  message: string;
+  id: string;
+}
+
+export async function submitContact(data: {
+  name: string;
+  email: string;
+  subject: string;
+  message: string;
+}): Promise<ContactSubmitResponse> {
+  return api.post('/contact', data);
 }
 
 // ── Test Payment ────────────────────────────────────────

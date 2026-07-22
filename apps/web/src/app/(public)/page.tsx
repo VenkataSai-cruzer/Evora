@@ -1,98 +1,158 @@
-export const dynamic = 'force-dynamic';
+'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { listPublicEvents } from '@/lib/api-client';
-import { formatDate } from '@/lib/dates';
+import { formatDate, formatTime } from '@/lib/dates';
 
-export default async function HomePage() {
-  const { events } = await listPublicEvents({ upcoming: true, limit: 6 });
-  const currentEvent = events[0] || null;
+export default function HomePage() {
+  const [event, setEvent] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    listPublicEvents({ limit: 1, upcoming: true })
+      .then((res) => {
+        if (res.events.length > 0) setEvent(res.events[0]);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
 
   return (
-    <div className="min-h-screen">
-      {/* Hero */}
-      <section className="relative flex min-h-[80vh] items-center justify-center overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-b from-primary/10 via-transparent to-transparent" />
-        <div className="page-container relative z-10 text-center">
-          <h1 className="text-5xl font-extrabold tracking-tight text-white sm:text-6xl lg:text-7xl">
-            7 NOTES
-          </h1>
-          <p className="mx-auto mt-4 max-w-xl text-lg text-text-secondary">
-            Live music events. Book your spot for the next session.
-          </p>
-          <div className="mt-8 flex items-center justify-center gap-4">
-            <Link href="/events"
-              className="rounded-lg bg-primary px-6 py-3 font-medium text-white transition-all hover:bg-primary-hover hover:-translate-y-0.5">
-              Browse events &rarr;
-            </Link>
-            {currentEvent && (
-              <Link href={`/events/${currentEvent.slug}`}
-                className="rounded-lg border border-[var(--color-border)] px-6 py-3 font-medium text-text-secondary transition-all hover:bg-surface-hover">
-                Current event
+    <div>
+      {/* ── Hero ────────────────────────────────────── */}
+      <section className="relative overflow-hidden border-b border-[var(--color-border)]">
+        <div className="absolute inset-0 bg-gradient-to-b from-primary/5 via-transparent to-transparent" />
+        <div className="relative mx-auto max-w-7xl px-4 py-24 sm:px-6 sm:py-32 lg:px-8">
+          <div className="max-w-2xl">
+            <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
+              Live music experience
+            </div>
+            <h1 className="text-4xl font-extrabold tracking-tight text-white sm:text-5xl lg:text-6xl">
+              7 NOTES
+            </h1>
+            <p className="mt-4 text-lg text-text-secondary sm:text-xl">
+              Live music events. Book tickets, attend, and experience the moment.
+            </p>
+            {loading ? (
+              <div className="mt-8 h-12 w-40 animate-pulse rounded-lg bg-surface-elevated" />
+            ) : event ? (
+              <Link
+                href={`/events/${event.slug}`}
+                className="mt-8 inline-flex h-12 items-center rounded-lg bg-primary px-6 text-base font-medium text-white transition-all hover:bg-primary-hover hover:-translate-y-0.5"
+              >
+                Book Now
               </Link>
+            ) : (
+              <p className="mt-8 text-sm text-text-muted">No upcoming events at this time.</p>
             )}
           </div>
         </div>
       </section>
 
-      {/* Current Event */}
-      {currentEvent && (
-        <section className="page-container pb-16">
-          <Link
-            href={`/events/${currentEvent.slug}`}
-            className="group block overflow-hidden rounded-2xl border border-[var(--color-border)] bg-gradient-to-r from-primary/5 to-transparent p-8 transition-all hover:bg-primary/10"
-          >
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <span className="text-xs font-semibold uppercase tracking-widest text-primary">Current Event</span>
-                <h2 className="mt-2 text-2xl font-bold text-white group-hover:text-primary transition-colors">{currentEvent.title}</h2>
-                <p className="mt-1 text-text-secondary">{formatDate(currentEvent.startAt)} &middot; {currentEvent.venueName}</p>
+      {/* ── Current Event ───────────────────────────── */}
+      {event && (
+        <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
+          <div className="rounded-2xl border border-[var(--color-border)] bg-surface p-6 sm:p-10">
+            <div className="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex-1">
+                <h2 className="text-2xl font-bold text-white sm:text-3xl">{event.title}</h2>
+                <p className="mt-2 text-text-secondary">{event.shortDescription}</p>
+
+                <div className="mt-6 grid gap-4 sm:grid-cols-2">
+                  <div className="rounded-xl border border-[var(--color-border)] bg-surface-elevated p-4">
+                    <p className="text-xs text-text-muted uppercase tracking-wider">Date & Time</p>
+                    <p className="mt-1 text-sm font-medium text-white">
+                      {formatDate(event.startAt)} at {formatTime(event.startAt)}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-[var(--color-border)] bg-surface-elevated p-4">
+                    <p className="text-xs text-text-muted uppercase tracking-wider">Venue</p>
+                    <p className="mt-1 text-sm font-medium text-white">{event.venueName}</p>
+                  </div>
+                </div>
+
+                {event.ticketTypes && event.ticketTypes.length > 0 && (
+                  <div className="mt-6">
+                    <p className="text-xs text-text-muted uppercase tracking-wider mb-3">Tickets</p>
+                    <div className="space-y-2">
+                      {event.ticketTypes.map((ticket: any) => (
+                        <div key={ticket.id} className="flex items-center justify-between rounded-lg border border-[var(--color-border)] bg-surface-elevated p-3">
+                          <span className="text-sm text-white">{ticket.name}</span>
+                          <span className="text-sm font-semibold text-primary">
+                            {ticket.price === 0 ? 'Free' : `₹${(ticket.price / 100).toLocaleString()}`}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <Link
+                  href={`/events/${event.slug}`}
+                  className="mt-6 inline-flex h-10 items-center rounded-lg bg-primary px-5 text-sm font-medium text-white transition-colors hover:bg-primary-hover"
+                >
+                  View Event Details
+                </Link>
               </div>
-              <span className="inline-flex items-center gap-1 rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-white">
-                Book tickets
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
-                </svg>
-              </span>
             </div>
-          </Link>
-        </section>
-      )}
 
-      {/* Upcoming Events */}
-      {events.length > 1 && (
-        <section className="page-container pb-16">
-          <div className="flex items-center justify-between">
-            <h2 className="text-2xl font-bold text-white">Upcoming events</h2>
-            <Link href="/events" className="text-sm text-primary hover:text-primary-hover">View all &rarr;</Link>
-          </div>
-          <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {events.slice(1).map((event) => (
-              <Link
-                key={event.id}
-                href={`/events/${event.slug}`}
-                className="group rounded-xl border border-[var(--color-border)] bg-surface p-5 transition-all hover:-translate-y-0.5 hover:shadow-lg"
-              >
-                <h3 className="font-semibold text-white group-hover:text-primary transition-colors">{event.title}</h3>
-                <p className="mt-1 text-sm text-text-secondary">{formatDate(event.startAt)}</p>
-                <p className="text-sm text-text-muted">{event.venueName}</p>
-              </Link>
-            ))}
+            {/* ── Countdown ──────────────────────────── */}
+            <div className="mt-8 border-t border-[var(--color-border)] pt-6">
+              <EventCountdown targetDate={event.startAt} />
+            </div>
           </div>
         </section>
       )}
 
-      {/* CTA */}
-      <section className="border-t border-[var(--color-border)] py-16">
-        <div className="page-container text-center">
-          <h2 className="text-3xl font-bold text-white">Ready for your next event?</h2>
-          <p className="mx-auto mt-2 max-w-md text-text-secondary">Register and start booking tickets.</p>
-          <div className="mt-8 flex items-center justify-center gap-4">
-            <Link href="/auth/register" className="rounded-lg bg-primary px-6 py-3 font-medium text-white hover:bg-primary-hover">Get started</Link>
-            <Link href="/events" className="rounded-lg border border-[var(--color-border)] px-6 py-3 font-medium text-text-secondary hover:bg-surface-hover">Browse events</Link>
-          </div>
+      {/* ── Partners ────────────────────────────────── */}
+      <section className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+        <div className="text-center">
+          <p className="text-xs text-text-muted uppercase tracking-wider">Organized by</p>
+          <p className="mt-2 text-lg font-semibold text-white">7 NOTES</p>
         </div>
       </section>
+    </div>
+  );
+}
+
+function EventCountdown({ targetDate }: { targetDate: string }) {
+  const [remaining, setRemaining] = useState<{ days: number; hours: number; minutes: number } | null>(null);
+
+  useEffect(() => {
+    function calc() {
+      const diff = new Date(targetDate).getTime() - Date.now();
+      if (diff <= 0) { setRemaining(null); return; }
+      setRemaining({
+        days: Math.floor(diff / (1000 * 60 * 60 * 24)),
+        hours: Math.floor((diff / (1000 * 60 * 60)) % 24),
+        minutes: Math.floor((diff / (1000 * 60)) % 60),
+      });
+    }
+    calc();
+    const interval = setInterval(calc, 60000);
+    return () => clearInterval(interval);
+  }, [targetDate]);
+
+  if (!remaining) return null;
+
+  return (
+    <div>
+      <p className="text-xs text-text-muted uppercase tracking-wider mb-3">Event starts in</p>
+      <div className="flex gap-4">
+        <div className="text-center">
+          <div className="text-2xl font-bold text-white">{remaining.days}</div>
+          <div className="text-xs text-text-muted">Days</div>
+        </div>
+        <div className="text-center">
+          <div className="text-2xl font-bold text-white">{remaining.hours}</div>
+          <div className="text-xs text-text-muted">Hours</div>
+        </div>
+        <div className="text-center">
+          <div className="text-2xl font-bold text-white">{remaining.minutes}</div>
+          <div className="text-xs text-text-muted">Minutes</div>
+        </div>
+      </div>
     </div>
   );
 }
