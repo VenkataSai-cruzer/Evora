@@ -32,11 +32,22 @@ export class ApiClientError extends Error {
 // ── CSRF Token handling ─────────────────────────────────
 // The session cookie is HttpOnly (not readable from JS), so we fetch
 // a CSRF token from the backend via GET /auth/csrf.
+//
+// IMPORTANT: The token is NOT cached permanently. If a request returns
+// 403 (CSRF token required), the cache is cleared and a fresh token is
+// fetched before retrying once. This prevents a stale/missing token
+// from blocking all subsequent mutation requests.
 
 let csrfToken: string | null = null;
 let csrfPromise: Promise<string | null> | null = null;
 
-async function fetchCsrfToken(): Promise<string | null> {
+async function fetchCsrfToken(forceRefresh: boolean = false): Promise<string | null> {
+  // If forcing a refresh, clear cache first
+  if (forceRefresh) {
+    csrfToken = null;
+    csrfPromise = null;
+  }
+
   if (csrfToken) return csrfToken;
   if (csrfPromise) return csrfPromise;
 
@@ -57,7 +68,7 @@ async function fetchCsrfToken(): Promise<string | null> {
   return csrfPromise;
 }
 
-/** Clear cached CSRF token (e.g., after logout). */
+/** Clear cached CSRF token (e.g., after logout or 403 retry). */
 export function clearCsrfToken(): void {
   csrfToken = null;
   csrfPromise = null;
@@ -98,6 +109,41 @@ async function request<T>(
         error: res.statusText,
       };
     }
+
+    // Handle CSRF token failure — clear cache and retry ONCE
+    if (res.status === 403 && errorBody.error === 'CSRF token required') {
+      // Only retry if we haven't already tried with a fresh token
+      if (!(options as any)?._csrfRetried) {
+        const freshToken = await fetchCsrfToken(true);
+        if (freshToken) {
+          const retryHeaders: Record<string, string> = {
+            ...headers,
+            'X-CSRF-Token': freshToken,
+          };
+          const retryRes = await fetch(url, {
+            ...options,
+            headers: retryHeaders,
+            credentials: 'include',
+            // Mark this as a retry to prevent infinite loops
+            _csrfRetried: true,
+          } as RequestInit & { _csrfRetried?: boolean });
+          if (retryRes.ok) {
+            const contentLength = retryRes.headers.get('content-length');
+            if (retryRes.status === 204 || contentLength === '0') {
+              return undefined as unknown as T;
+            }
+            return retryRes.json() as Promise<T>;
+          }
+          // Fall through to normal error handling if retry also fails
+          try {
+            errorBody = await retryRes.json();
+          } catch {
+            errorBody = { statusCode: retryRes.status, error: retryRes.statusText };
+          }
+        }
+      }
+    }
+
     throw new ApiClientError(
       errorBody.statusCode || res.status,
       errorBody.message || errorBody.error || 'Request failed',
@@ -360,7 +406,7 @@ export async function createOrder(data: {
   eventId: string;
   ticketTypeId: string;
   quantity: number;
-  attendees: { name: string; email?: string }[];
+  attendees: { name: string; email?: string; phone?: string }[];
   utrNumber?: string;
 }): Promise<OrderResponse> {
   return api.post('/orders', data);

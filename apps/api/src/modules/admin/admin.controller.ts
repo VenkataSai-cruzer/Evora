@@ -325,11 +325,29 @@ export class AdminController {
     const adminId = request.user!.id;
 
     try {
-      // Optimistic concurrency: check payment proof hasn't been reviewed by another admin
-      const order = await prisma.order.findUnique({ where: { id }, include: { paymentProof: true } });
+      const order = await prisma.order.findUnique({
+        where: { id },
+        include: { paymentProof: true },
+      });
       if (!order) return reply.status(404).send({ error: 'Order not found' });
 
-      if (order.paymentProof && order.paymentProof.status !== 'PENDING') {
+      // Validate order status is eligible for approval
+      const validStates = ['PENDING_PAYMENT', 'PENDING_VERIFICATION', 'REJECTED'];
+      if (!validStates.includes(order.status)) {
+        return reply.status(409).send({
+          error: `Order is "${order.status}" — cannot approve.`,
+        });
+      }
+
+      // Payment proof must exist and be PENDING for approval
+      if (!order.paymentProof) {
+        return reply.status(409).send({
+          code: 'PAYMENT_PROOF_REQUIRED',
+          error: 'Payment proof must be submitted before approval.',
+        });
+      }
+
+      if (order.paymentProof.status !== 'PENDING') {
         return reply.status(409).send({
           error: 'Conflict: This payment has already been reviewed.',
           currentStatus: order.paymentProof.status,
@@ -340,7 +358,6 @@ export class AdminController {
       // Optional: verify the client's expected updatedAt matches
       if (
         body?.expectedProofUpdatedAt &&
-        order.paymentProof &&
         order.paymentProof.updatedAt.toISOString() !== body.expectedProofUpdatedAt
       ) {
         return reply.status(409).send({
@@ -349,12 +366,10 @@ export class AdminController {
       }
 
       // Update PaymentProof status
-      if (order.paymentProof && order.paymentProof.status === 'PENDING') {
-        await prisma.paymentProof.update({
-          where: { orderId: id },
-          data: { status: 'APPROVED', reviewedAt: new Date(), reviewedById: adminId },
-        });
-      }
+      await prisma.paymentProof.update({
+        where: { orderId: id },
+        data: { status: 'APPROVED', reviewedAt: new Date(), reviewedById: adminId },
+      });
 
       const result = await finalizeApprovedOrder(id, adminId, 'MANUAL_ADMIN', body?.overrideAmount, body?.note, request.ip, request.headers['user-agent']);
 
