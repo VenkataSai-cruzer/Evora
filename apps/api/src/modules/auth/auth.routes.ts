@@ -7,6 +7,12 @@ export async function authRoutes(app: FastifyInstance) {
   const controller = new AuthController();
 
   app.post('/register', {
+    config: {
+      rateLimit: {
+        max: 5,
+        timeWindow: '1 hour',
+      },
+    },
     schema: {
       body: {
         type: 'object',
@@ -22,6 +28,12 @@ export async function authRoutes(app: FastifyInstance) {
   });
 
   app.post('/login', {
+    config: {
+      rateLimit: {
+        max: 5,
+        timeWindow: '15 minutes',
+      },
+    },
     schema: {
       body: {
         type: 'object',
@@ -56,6 +68,12 @@ export async function authRoutes(app: FastifyInstance) {
 
   // ── Password Reset (no auth required) ─────────────────
   app.post('/forgot-password', {
+    config: {
+      rateLimit: {
+        max: 3,
+        timeWindow: '1 hour',
+      },
+    },
     handler: forgotPassword,
   });
 

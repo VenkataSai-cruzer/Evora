@@ -70,7 +70,13 @@ export class AuthController {
       return reply.status(401).send({ error: 'Invalid credentials' });
     }
 
-    // Create session
+    // Revoke all existing sessions for this user (session fixation protection)
+    await prisma.session.updateMany({
+      where: { userId: user.id, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+
+    // Create new session
     const sessionToken = generateSessionToken();
     await prisma.session.create({
       data: {

@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-provider';
+import { getDefaultRouteForRole } from '@/lib/auth-routes';
 
 interface AuthGuardProps {
   children: React.ReactNode;
@@ -13,18 +14,20 @@ interface AuthGuardProps {
 /**
  * Client-side AuthGuard.
  *
- * Protects pages from guest access by redirecting to login if not authenticated.
+ * Protects pages from unauthorized access by checking:
+ * 1. Is the user authenticated? If not → redirect to login.
+ * 2. Does the user have the required role? If not → redirect to /unauthorized.
+ *
  * Works reliably in Cloudflare Workers cross-domain cookie auth where server-side
  * redirect() is not supported.
  *
- * Usage in a server component page:
- *   export default function Page() {
- *     return (
- *       <AuthGuard requiredRole="ADMIN">
- *         <PageContent />
- *       </AuthGuard>
- *     );
- *   }
+ * Usage:
+ *   <AuthGuard requiredRole="ADMIN">
+ *     <AdminPage />
+ *   </AuthGuard>
+ *   <AuthGuard requiredRole={['ADMIN', 'ORGANIZER']}>
+ *     <SharedPage />
+ *   </AuthGuard>
  */
 export function AuthGuard({ children, requiredRole, fallback }: AuthGuardProps) {
   const { user, loading } = useAuth();
@@ -33,12 +36,18 @@ export function AuthGuard({ children, requiredRole, fallback }: AuthGuardProps) 
 
   useEffect(() => {
     if (loading) return;
+
     if (!user) {
       router.replace(`/auth/login?callbackUrl=${encodeURIComponent(pathname)}`);
-    } else if (requiredRole) {
+      return;
+    }
+
+    if (requiredRole) {
       const allowed = Array.isArray(requiredRole) ? requiredRole : [requiredRole];
       if (!allowed.includes(user.role)) {
-        router.replace('/');
+        // Role mismatch — redirect to /unauthorized with the user's default route
+        const defaultRoute = getDefaultRouteForRole(user.role);
+        router.replace(`/unauthorized?redirect=${encodeURIComponent(defaultRoute)}`);
       }
     }
   }, [user, loading, router, pathname, requiredRole]);

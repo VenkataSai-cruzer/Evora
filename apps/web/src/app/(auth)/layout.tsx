@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-provider';
+import { getDefaultRouteForRole } from '@/lib/auth-routes';
 
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -11,7 +12,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
 
   useEffect(() => {
     if (!loading && user) {
-      router.replace(user.role === 'ADMIN' ? '/admin' : '/my-event');
+      router.replace(getDefaultRouteForRole(user.role));
     }
   }, [user, loading, router]);
 

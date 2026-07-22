@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth-provider';
 import { GUEST_NAV, isActive } from '@/lib/navigation';
+import { getDefaultRouteForRole } from '@/lib/auth-routes';
 
 export default function PublicLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -39,7 +40,7 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
               <div className="h-8 w-20 animate-pulse rounded-lg bg-surface-elevated" />
             ) : user ? (
               <Link
-                href={user.role === 'ADMIN' ? '/admin' : '/my-event'}
+                href={getDefaultRouteForRole(user.role)}
                 className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-hover"
               >
                 {user.role === 'ADMIN' ? 'Admin' : 'My Event'}

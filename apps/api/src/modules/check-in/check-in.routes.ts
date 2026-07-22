@@ -8,6 +8,12 @@ export async function checkInRoutes(app: FastifyInstance) {
 
   // Verify QR code (ADMIN, SCANNER, or ORGANIZER)
   app.post('/verify', {
+    config: {
+      rateLimit: {
+        max: 60,
+        timeWindow: '1 minute',
+      },
+    },
     preHandler: [requireAuth, requireRole('ADMIN', 'SCANNER', 'ORGANIZER')],
     handler: controller.verify.bind(controller),
   });

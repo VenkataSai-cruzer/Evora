@@ -78,6 +78,29 @@ export async function buildApp() {
     },
   });
 
+  // ── Security Headers (applied to all responses) ───────
+  app.addHook('onSend', async (_request, reply, payload) => {
+    reply
+      .header('X-Content-Type-Options', 'nosniff')
+      .header('X-Frame-Options', 'DENY')
+      .header('Referrer-Policy', 'strict-origin-when-cross-origin')
+      .header('Permissions-Policy', 'camera=(self), microphone=(), geolocation=()')
+      .header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload')
+      .header(
+        'Content-Security-Policy',
+        [
+          "default-src 'self'",
+          "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+          "style-src 'self' 'unsafe-inline'",
+          "img-src 'self' data: blob:",
+          "font-src 'self' data:",
+          "connect-src 'self' https://*.7notes.workers.dev",
+          "frame-ancestors 'none'",
+        ].join('; '),
+      );
+    return payload;
+  });
+
   // ── Custom error handler ─────────────────────────────
   app.setErrorHandler(errorHandler);
 

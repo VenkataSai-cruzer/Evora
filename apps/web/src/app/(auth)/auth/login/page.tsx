@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { login } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-provider';
+import { sanitizeCallbackUrl } from '@/lib/auth-routes';
 import { z } from 'zod';
 
 const schema = z.object({
@@ -32,7 +33,8 @@ function LoginForm() {
       const result = await login(email, password);
       if (result.user) {
         await refresh();
-        router.replace(result.user.role === 'ADMIN' ? '/admin' : callbackUrl);
+        const safeUrl = sanitizeCallbackUrl(result.user.role === 'ADMIN' ? undefined : callbackUrl, result.user.role);
+        router.replace(safeUrl);
         router.refresh();
       } else {
         setError('Invalid email or password');
