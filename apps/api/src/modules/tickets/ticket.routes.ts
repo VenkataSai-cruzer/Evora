@@ -25,9 +25,14 @@ export async function ticketRoutes(app: FastifyInstance) {
     handler: controller.renderHtml.bind(controller),
   });
 
+  app.get('/:ticketNumber/render', {
+    preHandler: [requireAuth],
+    handler: controller.renderPng.bind(controller),
+  });
+
   app.get('/:ticketNumber/download', {
     preHandler: [requireAuth],
-    handler: controller.download.bind(controller),
+    handler: controller.downloadPdf.bind(controller),
   });
 }
 

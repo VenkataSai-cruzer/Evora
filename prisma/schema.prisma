@@ -486,13 +486,23 @@ model Ticket {
   issuedById      String?
   issuedByRole    String?
   pricePaid       Int       @default(0)
-  status          String    @default("CONFIRMED") // CONFIRMED | CHECKED_IN | CANCELLED | EXPIRED
+  status          String    @default("CONFIRMED") // CONFIRMED | CHECKED_IN | REVOKED | CANCELLED | EXPIRED
   qrToken         String?   @unique // the actual token (generated securely, stored here for QR rendering only)
   qrTokenHash     String?   @unique // SHA-256 of qrToken — used for lookup on scan
   templateVersion Int       @default(1)
   pngObjectKey    String?
   pdfObjectKey    String?
   renderingStatus String    @default("PENDING") // PENDING | COMPLETED | FAILED
+  // Delivery tracking (Phase 4.5)
+  issuedAt        DateTime  @default(now())
+  deliveredAt     DateTime?
+  deliveryStatus  String    @default("PENDING") // PENDING | SENT | FAILED
+  deliveryAttempts Int      @default(0)
+  lastDeliveryAttemptAt DateTime?
+  // Revocation tracking
+  revokedAt       DateTime?
+  revokeReason    String?
+  // Check-in tracking (existing)
   checkedInAt     DateTime?
   checkedInById   String?
   gateName        String?

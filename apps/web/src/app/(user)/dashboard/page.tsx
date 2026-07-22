@@ -169,7 +169,7 @@ export default function UserDashboardPage() {
           <StatCard label="Pending" value={stats.pendingPayments} icon="⏳" color="text-warning font-bold" href={stats.pendingPayments > 0 ? '/payment-status' : undefined} />
           <StatCard label="Approved" value={stats.approvedPayments} icon="✅" color="text-success font-bold" />
           <StatCard label="Rejected" value={stats.rejectedPayments} icon="✗" color="text-error font-bold" href={stats.rejectedPayments > 0 ? '/payment-status' : undefined} />
-          <StatCard label="Active Tickets" value={stats.activeTickets} icon="🎫" color="text-primary font-bold" href={stats.activeTickets > 0 ? '/my-ticket' : undefined} />
+          <StatCard label="Active Tickets" value={stats.activeTickets} icon="🎫" color="text-primary font-bold" href={stats.activeTickets > 0 ? '/tickets' : undefined} />
         </div>
       )}
 
@@ -251,7 +251,7 @@ export default function UserDashboardPage() {
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="text-xs text-text-muted uppercase tracking-wider">My Tickets ({tickets.length})</h3>
-            <Link href="/my-ticket" className="text-xs text-primary hover:text-primary-hover transition-colors">View all &rarr;</Link>
+            <Link href="/tickets" className="text-xs text-primary hover:text-primary-hover transition-colors">View all &rarr;</Link>
           </div>
           <div className="space-y-2">
             {tickets.slice(0, 5).map((ticket: any) => (
@@ -315,7 +315,7 @@ export default function UserDashboardPage() {
       {/* Quick Links */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Link href="/payment-status" className="rounded-lg border border-[var(--color-border)] bg-surface-elevated px-4 py-3 text-xs font-medium text-text-secondary hover:text-white hover:bg-surface-hover transition-colors text-center">📋 Payment Status</Link>
-        <Link href="/my-ticket" className="rounded-lg border border-[var(--color-border)] bg-surface-elevated px-4 py-3 text-xs font-medium text-text-secondary hover:text-white hover:bg-surface-hover transition-colors text-center">🎫 My Tickets</Link>
+        <Link href="/tickets" className="rounded-lg border border-[var(--color-border)] bg-surface-elevated px-4 py-3 text-xs font-medium text-text-secondary hover:text-white hover:bg-surface-hover transition-colors text-center">🎫 My Tickets</Link>
         <Link href="/profile" className="rounded-lg border border-[var(--color-border)] bg-surface-elevated px-4 py-3 text-xs font-medium text-text-secondary hover:text-white hover:bg-surface-hover transition-colors text-center">👤 Profile</Link>
         <Link href="/events" className="rounded-lg border border-[var(--color-border)] bg-surface-elevated px-4 py-3 text-xs font-medium text-text-secondary hover:text-white hover:bg-surface-hover transition-colors text-center">📅 Browse Events</Link>
       </div>

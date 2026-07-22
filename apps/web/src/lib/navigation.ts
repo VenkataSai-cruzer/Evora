@@ -19,7 +19,7 @@ export const SCANNER_NAV: NavItem[] = [
 export const USER_NAV: NavItem[] = [
   { label: 'Dashboard', href: '/dashboard' },
   { label: 'My Event', href: '/my-event' },
-  { label: 'My Ticket', href: '/my-ticket' },
+  { label: 'My Ticket', href: '/tickets' },
   { label: 'Payment Status', href: '/payment-status' },
   { label: 'Announcements', href: '/announcements' },
   { label: 'Profile', href: '/profile' },
@@ -42,6 +42,7 @@ export const ADMIN_NAV: NavItem[] = [
 export function isActive(href: string, pathname: string): boolean {
   if (href === '/admin') return pathname === '/admin';
   if (href === '/my-event') return pathname === '/my-event';
+  if (href === '/tickets') return pathname === '/tickets';
   if (href === '/dashboard') return pathname === '/dashboard';
   return pathname === href || pathname.startsWith(href + '/');
 }
