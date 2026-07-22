@@ -1,5 +1,6 @@
-import nodemailer from 'nodemailer';
 import { prisma } from '../database/prisma.js';
+import { getEmailProvider } from './providers/index.js';
+import type { SendEmailInput } from './providers/interfaces.js';
 
 export type NotificationType =
   | 'PAYMENT_RECEIVED'
@@ -9,80 +10,74 @@ export type NotificationType =
   | 'COMPLIMENTARY_ISSUED'
   | 'ANNOUNCEMENT';
 
-interface EmailPayload {
-  to: string;
-  subject: string;
-  html: string;
-  text: string;
-}
-
-// Build a simple transporter — falls back to test config if Resend not configured
-function buildTransporter() {
-  const apiKey = process.env.RESEND_API_KEY;
-  if (apiKey) {
-    return nodemailer.createTransport({
-      host: 'smtp.resend.com',
-      port: 465,
-      secure: true,
-      auth: { user: 'resend', pass: apiKey },
-    });
+/**
+ * When EMAIL_DEV_REDIRECT=true and NODE_ENV !== 'production',
+ * all emails are redirected to EMAIL_DEV_RECIPIENT.
+ * The intended recipient is shown in the subject line and stored in metadata.
+ */
+function resolveRecipient(originalTo: string): { deliveryRecipient: string; subjectPrefix: string; devRedirected: boolean } {
+  const isDev = process.env.EMAIL_DEV_REDIRECT === 'true' && process.env.NODE_ENV !== 'production';
+  if (!isDev) {
+    return { deliveryRecipient: originalTo, subjectPrefix: '', devRedirected: false };
   }
-
-  // Dev fallback: log to console
-  return nodemailer.createTransport({
-    streamTransport: true,
-    newline: 'unix',
-    buffer: true,
-  });
+  const devRecipient = process.env.EMAIL_DEV_RECIPIENT;
+  if (!devRecipient) {
+    console.warn('[Email] EMAIL_DEV_REDIRECT=true but EMAIL_DEV_RECIPIENT is not set — sending to original recipient');
+    return { deliveryRecipient: originalTo, subjectPrefix: '', devRedirected: false };
+  }
+  return {
+    deliveryRecipient: devRecipient,
+    subjectPrefix: `[DEV][To: ${originalTo}] `,
+    devRedirected: true,
+  };
 }
-
-const transporter = buildTransporter();
-const FROM = process.env.EMAIL_FROM || '7 NOTES <tickets@7notes.in>';
 
 /**
  * Send a single email and log the attempt.
+ * Uses the configured EmailProvider (EMAIL_PROVIDER env var).
  * Failures are recorded but never thrown — callers must not crash on email failure.
  */
 export async function sendEmail(
-  payload: EmailPayload,
+  payload: SendEmailInput,
   type: NotificationType,
   userId?: string,
   metadata?: Record<string, unknown>,
 ): Promise<void> {
+  const { deliveryRecipient, subjectPrefix, devRedirected } = resolveRecipient(
+    Array.isArray(payload.to) ? payload.to[0] : payload.to,
+  );
+
   const logRecord = await prisma.notificationLog.create({
     data: {
       userId: userId ?? null,
       channel: 'EMAIL',
       type,
-      recipient: payload.to,
-      subject: payload.subject,
+      recipient: deliveryRecipient,
+      subject: `${subjectPrefix}${payload.subject}`,
       status: 'PENDING',
-      metadata: JSON.stringify(metadata ?? {}),
+      metadata: JSON.stringify({
+        ...(metadata ?? {}),
+        ...(devRedirected ? { originalRecipient: Array.isArray(payload.to) ? payload.to.join(', ') : payload.to, devRedirected: true } : {}),
+      }),
     },
   });
 
   try {
-    if (!process.env.RESEND_API_KEY) {
-      // Dev mode — just log
-      console.log(`[Email DEV] To: ${payload.to} | ${payload.subject}`);
-      await prisma.notificationLog.update({
-        where: { id: logRecord.id },
-        data: { status: 'SENT', attempts: 1, lastAttempt: new Date() },
-      });
-      return;
-    }
-
-    await transporter.sendMail({
-      from: FROM,
-      to: payload.to,
-      subject: payload.subject,
-      html: payload.html,
-      text: payload.text,
+    const provider = getEmailProvider();
+    const result = await provider.send({
+      ...payload,
+      to: deliveryRecipient,
+      subject: `${subjectPrefix}${payload.subject}`,
     });
 
     await prisma.notificationLog.update({
       where: { id: logRecord.id },
-      data: { status: 'SENT', attempts: 1, lastAttempt: new Date() },
+      data: {
+        status: 'SENT',
+        attempts: 1,
+        lastAttempt: new Date(),
+        providerMessageId: result.providerMessageId,
+      },
     });
   } catch (err) {
     const error = err instanceof Error ? err.message : 'Unknown error';

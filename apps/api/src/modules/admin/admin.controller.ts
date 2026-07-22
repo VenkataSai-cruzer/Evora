@@ -4,8 +4,6 @@ import { finalizeApprovedOrder } from '../orders/order-finalization.service.js';
 import { generateQrToken } from '../../infrastructure/rendering/qr.service.js';
 import { writeAuditLog } from '../../infrastructure/audit/audit.service.js';
 import {
-  sendPaymentRejectedEmail,
-  sendTicketIssuedEmail,
   sendTelegramAdminAlert,
 } from '../../infrastructure/email/email.service.js';
 
@@ -421,12 +419,7 @@ export class AdminController {
         ipAddress: request.ip, metadata: { reason: body.reason, orderNumber: order.orderNumber },
       });
 
-      sendPaymentRejectedEmail({
-        to: order.user.email, attendeeName: order.user.name,
-        orderNumber: order.orderNumber, eventTitle: order.event.title,
-        reason: body.reason, userId: order.userId,
-      }).catch(console.error);
-
+      // Email notifications disabled until verified domain is set up.
       sendTelegramAdminAlert(`❌ <b>Payment Rejected</b>\nOrder: <code>${order.orderNumber}</code>\nReason: ${body.reason}`).catch(console.error);
 
       return reply.send({ success: true, message: `Payment rejected: ${body.reason} — user can resubmit proof.` });
@@ -546,17 +539,7 @@ export class AdminController {
       metadata: { category: body.ticketCategory, reason: body.reason, internalNote: body.internalNote, quantity: qty, attendeeEmail: body.attendeeEmail },
     });
 
-    if (body.sendNotification !== false) {
-      const eventDate = event.startAt.toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-      for (const ticket of tickets) {
-        sendTicketIssuedEmail({
-          to: body.attendeeEmail, attendeeName: body.attendeeName,
-          eventTitle: event.title, eventDate, venueName: event.venueName,
-          ticketNumber: ticket.ticketNumber, ticketCategory: ticket.ticketCategory,
-          userId: attendeeUser.id, isComplimentary: true,
-        }).catch(console.error);
-      }
-    }
+    // Email notifications disabled until verified domain is set up.
 
     return reply.status(201).send({
       success: true,
@@ -672,4 +655,5 @@ export class AdminController {
     });
     return { checkIns };
   }
+
 }

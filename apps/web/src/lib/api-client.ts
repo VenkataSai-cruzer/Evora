@@ -545,7 +545,7 @@ export interface CheckInVerifyResponse {
  * looks up the ticket, and atomically checks in if valid.
  */
 export async function checkInTicket(data: {
-  qrToken: string;
+  token: string;
   eventId: string;
   gateName?: string;
   scannerDevice?: string;

@@ -17,8 +17,8 @@ export class CheckInController {
    * Only one SUCCESS per ticket (enforced by CheckIn unique constraint).
    */
   async verify(request: FastifyRequest, reply: FastifyReply) {
-    const { qrToken, eventId, gateName, scannerDevice } = request.body as {
-      qrToken: string;
+    const { token, eventId, gateName, scannerDevice } = request.body as {
+      token: string;
       eventId?: string;
       gateName?: string;
       scannerDevice?: string;
@@ -26,11 +26,11 @@ export class CheckInController {
     const scannerId = request.user!.id;
     const scannerRole = request.user!.role;
 
-    if (!qrToken) {
-      return reply.status(400).send({ error: 'qrToken is required' });
+    if (!token) {
+      return reply.status(400).send({ error: 'token is required' });
     }
 
-    const tokenHash = hashQrToken(qrToken);
+    const tokenHash = hashQrToken(token);
 
     const ticket = await prisma.ticket.findUnique({
       where: { qrTokenHash: tokenHash },
@@ -73,7 +73,7 @@ export class CheckInController {
 
     const resolvedEventId = ticket.eventId;
 
-    // Verify scanner is assigned to this event (skip for ADMIN)
+    // Verify scanner/actor is authorized for this event
     if (scannerRole === 'SCANNER') {
       const assignment = await prisma.scannerAssignment.findUnique({
         where: { scannerId_eventId: { scannerId, eventId: resolvedEventId } },
@@ -82,6 +82,16 @@ export class CheckInController {
       if (!assignment || !assignment.isActive) {
         await recordAttempt('NOT_ACTIVE', ticket.id, resolvedEventId);
         return reply.status(403).send({ error: 'Not assigned to this event or assignment inactive' });
+      }
+    } else if (scannerRole === 'ORGANIZER') {
+      // Organizer can only scan events they own
+      const event = await prisma.event.findUnique({
+        where: { id: resolvedEventId },
+        select: { organizerId: true },
+      });
+      if (!event || event.organizerId !== scannerId) {
+        await recordAttempt('NOT_ACTIVE', ticket.id, resolvedEventId);
+        return reply.status(403).send({ error: 'Not authorized to scan this event' });
       }
     }
 
@@ -215,7 +225,7 @@ export class CheckInController {
     }
 
     // Delegate to verify using the real QR token
-    request.body = { qrToken: ticket.qrToken, eventId, gateName, scannerDevice };
+    request.body = { token: ticket.qrToken, eventId, gateName, scannerDevice };
     return this.verify(request, reply);
   }
 
@@ -231,6 +241,16 @@ export class CheckInController {
       // Admins can see all published events
       const events = await prisma.event.findMany({
         where: { status: 'PUBLISHED' },
+        select: { id: true, title: true, slug: true, startAt: true, venueName: true },
+        orderBy: { startAt: 'asc' },
+      });
+      return { events };
+    }
+
+    if (scannerRole === 'ORGANIZER') {
+      // Organizers can see their own events
+      const events = await prisma.event.findMany({
+        where: { organizerId: scannerId, status: 'PUBLISHED' },
         select: { id: true, title: true, slug: true, startAt: true, venueName: true },
         orderBy: { startAt: 'asc' },
       });

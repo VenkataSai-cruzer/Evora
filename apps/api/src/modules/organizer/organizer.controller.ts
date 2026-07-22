@@ -3,7 +3,6 @@ import { prisma } from '../../infrastructure/database/prisma.js';
 import { finalizeApprovedOrder } from '../orders/order-finalization.service.js';
 import { writeAuditLog } from '../../infrastructure/audit/audit.service.js';
 import {
-  sendPaymentRejectedEmail,
   sendTelegramAdminAlert,
 } from '../../infrastructure/email/email.service.js';
 
@@ -513,15 +512,7 @@ export class OrganizerController {
         },
       });
 
-      sendPaymentRejectedEmail({
-        to: order.user.email,
-        attendeeName: order.user.name,
-        orderNumber: order.orderNumber,
-        eventTitle: order.event.title,
-        reason: body.reason,
-        userId: order.userId,
-      }).catch(console.error);
-
+      // Email notifications disabled until verified domain is set up.
       sendTelegramAdminAlert(
         `❌ <b>Payment Rejected</b> (by Organizer)\nOrder: <code>${order.orderNumber}</code>\nReason: ${body.reason}`,
       ).catch(console.error);

@@ -1,10 +1,7 @@
 import { prisma } from '../../infrastructure/database/prisma.js';
 import { generateQrToken } from '../../infrastructure/rendering/qr.service.js';
 import { writeAuditLog } from '../../infrastructure/audit/audit.service.js';
-import {
-  sendPaymentApprovedEmail,
-  sendTicketIssuedEmail,
-} from '../../infrastructure/email/email.service.js';
+
 
 export type ApprovalSource = 'MANUAL_ADMIN' | 'SYSTEM';
 
@@ -180,53 +177,8 @@ export async function finalizeApprovedOrder(
     },
   });
 
-  // Send email notifications (fire and forget)
-  const fullOrder = await prisma.order.findUnique({
-    where: { id: orderId },
-    include: {
-      user: true,
-      event: true,
-    },
-  });
-
-  if (fullOrder && !(result as { alreadyConfirmed?: boolean }).alreadyConfirmed) {
-    const eventDate = fullOrder.event.startAt.toLocaleDateString('en-IN', {
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-    });
-
-    sendPaymentApprovedEmail({
-      to: fullOrder.user.email,
-      attendeeName: fullOrder.user.name,
-      orderNumber: fullOrder.orderNumber,
-      eventTitle: fullOrder.event.title,
-      eventDate,
-      venueName: fullOrder.event.venueName,
-      ticketCount: result.ticketsCreated,
-      userId: fullOrder.userId,
-    }).catch((err) => console.error('[Email] sendPaymentApprovedEmail failed:', err));
-
-    // Send individual ticket emails
-    const tickets = await prisma.ticket.findMany({
-      where: { orderId: fullOrder.id },
-      include: { ticketType: true },
-    });
-
-    for (const ticket of tickets) {
-      sendTicketIssuedEmail({
-        to: ticket.attendeeEmail || fullOrder.user.email,
-        attendeeName: ticket.attendeeName || fullOrder.user.name,
-        eventTitle: fullOrder.event.title,
-        eventDate,
-        venueName: fullOrder.event.venueName,
-        ticketNumber: ticket.ticketNumber,
-        ticketCategory: ticket.ticketCategory,
-        userId: fullOrder.userId,
-      }).catch((err) => console.error('[Email] sendTicketIssuedEmail failed:', err));
-    }
-  }
+  // Payment/ticket email notifications disabled until verified domain is set up.
+  // Users check status via their dashboard.
 
   return {
     orderId: result.orderId,

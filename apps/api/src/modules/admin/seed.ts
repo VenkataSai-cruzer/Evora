@@ -47,6 +47,38 @@ export async function seedStagingData() {
   });
   results.push(`Attendee: ${attendee.email}`);
 
+  // ── Organizer (Development) ─────────────────────────────
+  const organizerEmail = process.env.STAGING_ORGANIZER_EMAIL || 'organizer@7notes.in';
+  const organizerPasswordRaw = process.env.STAGING_ORGANIZER_PASSWORD || 'Organizer@2026';
+  const organizerPassword = await bcrypt.hash(organizerPasswordRaw, 12);
+  const organizer = await prisma.user.upsert({
+    where: { email: organizerEmail },
+    update: { name: 'Event Organizer', role: 'ORGANIZER' },
+    create: {
+      email: organizerEmail,
+      name: 'Event Organizer',
+      passwordHash: organizerPassword,
+      role: 'ORGANIZER',
+    },
+  });
+  results.push(`Organizer: ${organizer.email}`);
+
+  // ── Scanner (Development) ───────────────────────────────
+  const scannerEmail = process.env.STAGING_SCANNER_EMAIL || 'scanner@7notes.in';
+  const scannerPasswordRaw = process.env.STAGING_SCANNER_PASSWORD || 'Scanner@2026';
+  const scannerPassword = await bcrypt.hash(scannerPasswordRaw, 12);
+  const scanner = await prisma.user.upsert({
+    where: { email: scannerEmail },
+    update: { name: 'Entry Scanner', role: 'SCANNER' },
+    create: {
+      email: scannerEmail,
+      name: 'Entry Scanner',
+      passwordHash: scannerPassword,
+      role: 'SCANNER',
+    },
+  });
+  results.push(`Scanner: ${scanner.email}`);
+
   // ── Date helpers ──────────────────────────────────────
   const futureDate = (daysFromNow: number) => new Date(Date.now() + daysFromNow * 24 * 60 * 60 * 1000);
   const pastDate = (daysAgo: number) => new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000);

@@ -48,6 +48,7 @@ model User {
   paymentProofHistorySubmitted PaymentProofHistory[] @relation("PaymentProofHistorySubmittedBy")
   paymentProofHistoryReviewed  PaymentProofHistory[] @relation("PaymentProofHistoryReviewedBy")
   notificationLogs        NotificationLog[]
+  passwordResetTokens     PasswordResetToken[]
 
   @@index([role])
   @@index([status])
@@ -59,6 +60,24 @@ model Session {
   tokenHash String    @unique
   expiresAt DateTime
   revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// ───────────────────────────────────────────────
+// PASSWORD RESET TOKEN
+// ───────────────────────────────────────────────
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String    @unique // SHA-256 of the raw token
+  expiresAt DateTime
+  usedAt    DateTime?
   createdAt DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id])
@@ -493,12 +512,7 @@ model Ticket {
   pngObjectKey    String?
   pdfObjectKey    String?
   renderingStatus String    @default("PENDING") // PENDING | COMPLETED | FAILED
-  // Delivery tracking (Phase 4.5)
   issuedAt        DateTime  @default(now())
-  deliveredAt     DateTime?
-  deliveryStatus  String    @default("PENDING") // PENDING | SENT | FAILED
-  deliveryAttempts Int      @default(0)
-  lastDeliveryAttemptAt DateTime?
   // Revocation tracking
   revokedAt       DateTime?
   revokeReason    String?
@@ -668,6 +682,7 @@ model NotificationLog {
   lastAttempt DateTime?
   error       String?
   metadata    String    @default("{}")
+  providerMessageId String?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 

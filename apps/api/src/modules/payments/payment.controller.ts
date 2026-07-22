@@ -3,7 +3,6 @@ import { prisma } from '../../infrastructure/database/prisma.js';
 import { GoogleDriveService } from '../../infrastructure/storage/google-drive.service.js';
 import { writeAuditLog } from '../../infrastructure/audit/audit.service.js';
 import {
-  sendPaymentReceivedEmail,
   sendTelegramAdminAlert,
 } from '../../infrastructure/email/email.service.js';
 import { normalizeUtr } from '../../shared/utr.js';
@@ -296,20 +295,8 @@ export class PaymentController {
       },
     );
 
-    // Notifications
-    const user = await prisma.user.findUnique({ where: { id: userId } });
-    if (user) {
-      sendPaymentReceivedEmail({
-        to: user.email,
-        attendeeName: user.name,
-        orderNumber: order.orderNumber,
-        eventTitle: order.event.title,
-        amount: order.total,
-        utrNumber: normalized,
-        userId,
-      }).catch(console.error);
-    }
-
+    // Email notifications disabled until verified domain is set up.
+    // Users check payment status via their dashboard.
     sendTelegramAdminAlert(
       `💳 <b>New Payment Proof</b>\nOrder: <code>${order.orderNumber}</code>\nUTR: <code>${normalized}</code>\nEvent: ${order.event.title}\n<i>Awaiting review</i>`,
     ).catch(console.error);

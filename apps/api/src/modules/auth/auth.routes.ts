@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { requireAuth } from '../../middleware/authentication.js';
 import { AuthController } from './auth.controller.js';
+import { forgotPassword, resetPassword, validateResetToken } from './forgot-password.controller.js';
 
 export async function authRoutes(app: FastifyInstance) {
   const controller = new AuthController();
@@ -52,4 +53,18 @@ export async function authRoutes(app: FastifyInstance) {
     preHandler: [requireAuth],
     handler: controller.csrf.bind(controller),
   });
+
+  // ── Password Reset (no auth required) ─────────────────
+  app.post('/forgot-password', {
+    handler: forgotPassword,
+  });
+
+  app.post('/reset-password', {
+    handler: resetPassword,
+  });
+
+  app.get('/reset-password/:token', {
+    handler: validateResetToken,
+  });
 }
+

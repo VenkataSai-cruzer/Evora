@@ -119,7 +119,7 @@ export default function ScannerPage() {
         : undefined;
 
       const res = await checkInTicket({
-        qrToken: decodedText,
+        token: decodedText,
         eventId: selectedEventId,
         gateName: user?.name || undefined,
         scannerDevice: deviceInfo,
