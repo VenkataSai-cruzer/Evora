@@ -338,6 +338,7 @@ model Order {
   eventId            String
   userId             String
   status             String    @default("PENDING_PAYMENT") // PENDING_PAYMENT | PENDING_VERIFICATION | CONFIRMED | REJECTED | FAILED | EXPIRED | CANCELLED
+  paymentMethod      String    @default("BANK_TRANSFER")   // BANK_TRANSFER | FREE | COMPLIMENTARY
   subtotal           Int       @default(0)
   fees               Int       @default(0)
   total              Int       @default(0)

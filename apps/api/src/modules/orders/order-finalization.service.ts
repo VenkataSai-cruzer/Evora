@@ -5,6 +5,98 @@ import { writeAuditLog } from '../../infrastructure/audit/audit.service.js';
 
 export type ApprovalSource = 'MANUAL_ADMIN' | 'SYSTEM';
 
+
+// ── Free-order auto-confirm ──────────────────────────────────
+
+interface FreeConfirmInput {
+  orderId: string;
+  orderNumber: string;
+  eventId: string;
+  userId: string;
+  ticketNumberPrefix: string;
+  attendees: Array<{
+    id: string;
+    attendeeName: string;
+    attendeeEmail: string | null;
+    attendeePhone: string | null;
+    ticketType: {
+      id: string;
+      price: number;
+    };
+  }>;
+  approvedById?: string;
+  approvalNote?: string;
+}
+
+interface FreeConfirmResult {
+  ticketsCreated: number;
+  ticketNumbers: string[];
+}
+
+/**
+ * Generate tickets immediately for a FREE order.
+ * Called during order creation when total = 0.
+ * Does NOT create payment records, does NOT require proof.
+ */
+export async function autoConfirmFreeOrder(
+  input: FreeConfirmInput,
+): Promise<FreeConfirmResult> {
+  const { orderId, orderNumber, eventId, userId, ticketNumberPrefix, attendees, approvedById, approvalNote } = input;
+
+  const generatedTickets: { ticketNumber: string }[] = [];
+
+  for (let i = 0; i < attendees.length; i++) {
+    const attendee = attendees[i];
+    const { token, tokenHash } = generateQrToken();
+    const prefix = ticketNumberPrefix || '7N-';
+    const ticketNumber = `${prefix}FREE-${orderNumber}-${String(i + 1).padStart(2, '0')}`;
+
+    await prisma.ticket.create({
+      data: {
+        ticketNumber,
+        eventId,
+        userId,
+        orderId,
+        orderAttendeeId: attendee.id,
+        ticketTypeId: attendee.ticketType.id,
+        attendeeName: attendee.attendeeName,
+        attendeeEmail: attendee.attendeeEmail || '',
+        attendeePhone: attendee.attendeePhone || '',
+        ticketCategory: 'PAID',
+        source: 'SYSTEM',
+        visibility: 'STANDARD',
+        issuedById: approvedById || userId,
+        issuedByRole: 'SYSTEM',
+        pricePaid: 0,
+        status: 'CONFIRMED',
+        qrToken: token,
+        qrTokenHash: tokenHash,
+        templateVersion: 1,
+        renderingStatus: 'PENDING',
+      },
+    });
+
+    generatedTickets.push({ ticketNumber });
+  }
+
+  await writeAuditLog('PAYMENT_APPROVED', 'Order', orderId, {
+    actorId: approvedById || userId,
+    actorRole: 'SYSTEM',
+    eventId,
+    metadata: {
+      orderNumber,
+      ticketsCreated: generatedTickets.length,
+      note: approvalNote || 'Free event auto-confirm',
+      paymentMethod: 'FREE',
+    },
+  });
+
+  return {
+    ticketsCreated: generatedTickets.length,
+    ticketNumbers: generatedTickets.map((t) => t.ticketNumber),
+  };
+}
+
 interface FinalizeResult {
   orderId: string;
   orderNumber: string;

@@ -152,18 +152,25 @@ export class PaymentController {
     // Generate a randomized stored filename
     const storedFileName = `${randomUUID()}${ext}`;
 
-    // Upload to Google Drive
+    // Upload to Google Drive (if enabled)
     let driveFileId: string | undefined;
     let driveViewUrl: string | undefined;
     let storageProvider = 'GOOGLE_DRIVE';
 
-    if (process.env.GOOGLE_SERVICE_ACCOUNT_KEY_JSON) {
-      const driveService = new GoogleDriveService();
+    const driveEnabled = process.env.GOOGLE_DRIVE_ENABLED === 'true';
+    const hasDriveCreds =
+      process.env.GOOGLE_SERVICE_ACCOUNT_KEY_JSON ||
+      (process.env.GOOGLE_PROJECT_ID &&
+        process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL &&
+        process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY);
+
+    if (driveEnabled && hasDriveCreds) {
       try {
+        const driveService = new GoogleDriveService();
         const uploadResult = await driveService.uploadPaymentProof(
-          order.event.slug,
+          order.event.slug || order.event.title,
           order.orderNumber,
-          storedFileName,
+          normalized,
           fileBuffer,
           mimeType,
         );
@@ -178,7 +185,7 @@ export class PaymentController {
     } else {
       // Dev mode: store locally noted
       storageProvider = 'LOCAL';
-      console.log(`[Dev] Payment proof would be stored for order ${orderNumber}, UTR ${normalized}`);
+      console.log(`[Dev] Payment proof stored locally for order ${orderNumber}, UTR ${normalized}`);
     }
 
     // Determine if this is a resubmission before the transaction to avoid stale reads
@@ -269,7 +276,7 @@ export class PaymentController {
       });
     } catch (err) {
       // DB failed — attempt to clean up Drive upload
-      if (driveFileId && process.env.GOOGLE_SERVICE_ACCOUNT_KEY_JSON) {
+      if (driveFileId && (process.env.GOOGLE_DRIVE_ENABLED === 'true')) {
         try {
           const driveService = new GoogleDriveService();
           await driveService.deleteFile(driveFileId);

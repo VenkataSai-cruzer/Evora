@@ -59,6 +59,12 @@ export async function adminRoutes(app: FastifyInstance) {
   app.get('/users', controller.listUsers.bind(controller));
   app.patch('/users/:userId/role', controller.updateUserRole.bind(controller));
 
+  // ── Tickets ───────────────────────────────────────────────
+  app.post('/tickets/:ticketNumber/cancel', controller.cancelTicket.bind(controller));
+
   // ── Audit Logs ───────────────────────────────────────────
   app.get('/audit-logs', controller.listAuditLogs.bind(controller));
+
+  // ── Google Drive Test ─────────────────────────────────────
+  app.get('/drive/test', controller.testDriveConnection.bind(controller));
 }

@@ -1,5 +1,6 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { prisma } from '../../infrastructure/database/prisma.js';
+import { autoConfirmFreeOrder } from './order-finalization.service.js';
 
 export class OrderController {
   async create(request: FastifyRequest, reply: FastifyReply) {
@@ -38,8 +39,12 @@ export class OrderController {
       });
     }
 
-    // Transactional capacity check
-    const order = await prisma.$transaction(async (tx) => {
+    // ── Determine payment method based on price ────────────
+    const isFree = ticketType.price === 0;
+    const paymentMethod = isFree ? 'FREE' : 'BANK_TRANSFER';
+
+    // Transactional capacity check + order creation
+    const result = await prisma.$transaction(async (tx) => {
       const currentType = await tx.ticketType.findUnique({
         where: { id: ticketType.id },
       });
@@ -56,12 +61,15 @@ export class OrderController {
           orderNumber,
           eventId: body.eventId,
           userId,
-          status: 'PENDING_PAYMENT',
-          subtotal: ticketType.price * body.quantity,
+          status: isFree ? 'CONFIRMED' : 'PENDING_PAYMENT',
+          paymentMethod,
+          paymentProvider: isFree ? 'free' : null,
+          subtotal: 0,
           fees: 0,
-          total: ticketType.price * body.quantity,
+          total: 0,
           currency: ticketType.currency,
-          expiresAt: new Date(Date.now() + 30 * 60 * 1000), // 30 min expiry
+          paidAt: isFree ? new Date() : null,
+          expiresAt: isFree ? null : new Date(Date.now() + 30 * 60 * 1000),
           attendees: {
             create: body.attendees.map((a) => ({
               ticketTypeId: ticketType.id,
@@ -71,7 +79,13 @@ export class OrderController {
             })),
           },
         },
-        include: { attendees: true },
+        include: {
+          attendees: {
+            include: {
+              ticketType: { select: { id: true, price: true } },
+            },
+          },
+        },
       });
 
       // Reserve capacity
@@ -80,10 +94,34 @@ export class OrderController {
         data: { soldCount: { increment: body.quantity } },
       });
 
-      return newOrder;
+      return { order: newOrder, isFree };
     });
 
-    return reply.status(201).send({ order });
+    // ── For FREE orders: auto-generate tickets immediately ──
+    if (result.isFree) {
+      await autoConfirmFreeOrder({
+        orderId: result.order.id,
+        orderNumber: result.order.orderNumber,
+        eventId: body.eventId,
+        userId,
+        ticketNumberPrefix: event.ticketNumberPrefix || '',
+        attendees: result.order.attendees.map((a) => ({
+          id: a.id,
+          attendeeName: a.attendeeName,
+          attendeeEmail: a.attendeeEmail,
+          attendeePhone: a.attendeePhone,
+          ticketType: a.ticketType,
+        })),
+        approvedById: userId,
+        approvalNote: 'Free event booking auto-confirmed',
+      });
+    }
+
+    return reply.status(201).send({
+      order: result.order,
+      paymentMethod,
+      autoConfirmed: result.isFree,
+    });
   }
 
   async getByNumber(request: FastifyRequest, reply: FastifyReply) {

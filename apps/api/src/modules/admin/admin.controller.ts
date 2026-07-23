@@ -3,6 +3,7 @@ import { prisma } from '../../infrastructure/database/prisma.js';
 import { finalizeApprovedOrder } from '../orders/order-finalization.service.js';
 import { generateQrToken } from '../../infrastructure/rendering/qr.service.js';
 import { writeAuditLog } from '../../infrastructure/audit/audit.service.js';
+import { GoogleDriveService } from '../../infrastructure/storage/google-drive.service.js';
 import {
   sendTelegramAdminAlert,
 } from '../../infrastructure/email/email.service.js';
@@ -260,18 +261,20 @@ export class AdminController {
   // ── Orders / Payment Verification ────────────────────────
 
   async listOrders(request: FastifyRequest, _reply: FastifyReply) {
-    const query = request.query as { status?: string; eventId?: string; page?: string; limit?: string };
+    const query = request.query as { status?: string; eventId?: string; paymentMethod?: string; page?: string; limit?: string };
     const page = parseInt(query.page || '1', 10);
     const limit = parseInt(query.limit || '20', 10);
     const skip = (page - 1) * limit;
 
     const where: Record<string, unknown> = {};
-    // Default: show both PENDING_PAYMENT (no proof yet) and PENDING_VERIFICATION (proof submitted, awaiting review)
+    // Default: show BANK_TRANSFER orders with PENDING_PAYMENT or PENDING_VERIFICATION
     if (query.status) {
       where.status = query.status;
     } else {
       where.status = { in: ['PENDING_PAYMENT', 'PENDING_VERIFICATION'] };
     }
+    // Filter by payment method (default to BANK_TRANSFER for the verification queue)
+    where.paymentMethod = query.paymentMethod || 'BANK_TRANSFER';
     if (query.eventId) where.eventId = query.eventId;
 
     const [orders, total] = await Promise.all([
@@ -656,6 +659,144 @@ export class AdminController {
       prisma.auditLog.count({ where }),
     ]);
     return { logs, total, page, limit };
+  }
+
+  // ── Google Drive Test ──────────────────────────────────────
+
+  /**
+   * GET /admin/drive/test
+   * Tests Google Drive connectivity by listing the root folder
+   * and optionally uploading a test image.
+   */
+  async testDriveConnection(request: FastifyRequest, reply: FastifyReply) {
+    const driveEnabled = process.env.GOOGLE_DRIVE_ENABLED === 'true';
+
+    if (!driveEnabled) {
+      void request;
+      return reply.send({
+        enabled: false,
+        message: 'Google Drive is not enabled. Set GOOGLE_DRIVE_ENABLED=true',
+        rootFolderName: 'Evora Payment Proofs',
+        folders: [],
+      });
+    }
+
+    try {
+      const driveService = new GoogleDriveService();
+      const result = await driveService.testConnectivity();
+
+      // Optionally upload a test image to verify the full pipeline
+      let uploadTest;
+      try {
+        const uploadResult = await driveService.uploadTestFile();
+        uploadTest = {
+          ok: true,
+          fileId: uploadResult.fileId,
+          viewUrl: uploadResult.viewUrl,
+        };
+        // Clean up test file
+        await driveService.deleteFile(uploadResult.fileId).catch(() => {});
+      } catch {
+        uploadTest = { ok: false };
+      }
+
+      return reply.send({
+        enabled: true,
+        message: 'Google Drive connection successful',
+        connectivity: result,
+        uploadTest,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      return reply.status(502).send({
+        enabled: true,
+        error: 'Google Drive connection failed',
+        message,
+      });
+    }
+  }
+
+  // ── Tickets ────────────────────────────────────────────────
+
+  /**
+   * POST /admin/tickets/:ticketNumber/cancel
+   * Cancel (soft-delete) any ticket by ticket number.
+   *
+   * Sets status to CANCELLED so the scanner rejects it.
+   * Does NOT hard-delete the record — preserves audit trail,
+   * QR token, check-in history, and order linkage.
+   *
+   * Idempotent: cancelling an already-CANCELLED ticket returns
+   * success without error.
+   *
+   * Capacity (soldCount) is NOT automatically decremented.
+   * Admin can adjust capacity separately if needed.
+   */
+  async cancelTicket(request: FastifyRequest, reply: FastifyReply) {
+    const { ticketNumber } = request.params as { ticketNumber: string };
+    const adminId = request.user!.id;
+
+    const ticket = await prisma.ticket.findUnique({
+      where: { ticketNumber },
+      select: {
+        id: true,
+        ticketNumber: true,
+        status: true,
+        eventId: true,
+        userId: true,
+        attendeeName: true,
+        ticketCategory: true,
+      },
+    });
+
+    if (!ticket) {
+      return reply.status(404).send({ error: 'Ticket not found' });
+    }
+
+    if (ticket.status === 'CANCELLED') {
+      // Idempotent: already cancelled, return success
+      return reply.send({
+        success: true,
+        message: 'Ticket was already cancelled.',
+        ticket: { ticketNumber: ticket.ticketNumber, status: 'CANCELLED' },
+      });
+    }
+
+    if (ticket.status === 'CHECKED_IN') {
+      return reply.status(409).send({
+        code: 'TICKET_ALREADY_CHECKED_IN',
+        error: 'Cannot cancel a ticket that has already been checked in. Revoke check-in first.',
+      });
+    }
+
+    await prisma.ticket.update({
+      where: { ticketNumber },
+      data: { status: 'CANCELLED' },
+    });
+
+    await writeAuditLog('TICKET_CANCELLED', 'Ticket', ticket.id, {
+      actorId: adminId,
+      actorRole: 'ADMIN',
+      eventId: ticket.eventId,
+      ipAddress: request.ip,
+      userAgent: request.headers['user-agent'],
+      metadata: {
+        ticketNumber: ticket.ticketNumber,
+        attendeeName: ticket.attendeeName,
+        ticketCategory: ticket.ticketCategory,
+        previousStatus: ticket.status,
+      },
+    });
+
+    return reply.send({
+      success: true,
+      message: `Ticket ${ticket.ticketNumber} has been cancelled.`,
+      ticket: {
+        ticketNumber: ticket.ticketNumber,
+        previousStatus: ticket.status,
+        status: 'CANCELLED',
+      },
+    });
   }
 
   // ── Check-ins ─────────────────────────────────────────────
