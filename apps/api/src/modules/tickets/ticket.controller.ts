@@ -5,30 +5,36 @@ import { renderTicketHtml } from '../../infrastructure/rendering/ticket.service.
 import { renderTicketPng, renderTicketPdf } from '../../infrastructure/rendering/ticket.renderer.js';
 
 export class TicketController {
-  async list(request: FastifyRequest, _reply: FastifyReply) {
+  async list(request: FastifyRequest, reply: FastifyReply) {
     const userId = request.user!.id;
     const query = request.query as { eventId?: string; status?: string };
 
-    const where: Record<string, unknown> = { userId };
+    try {
+      const where: Record<string, unknown> = { userId };
 
-    if (query.eventId) where.eventId = query.eventId;
-    if (query.status) where.status = query.status;
+      if (query.eventId) where.eventId = query.eventId;
+      if (query.status) where.status = query.status;
 
-    const tickets = await prisma.ticket.findMany({
-      where,
-      include: {
-        event: {
-          select: { id: true, title: true, slug: true, startAt: true, venueName: true, venueAddress: true, posterObjectKey: true },
+      const tickets = await prisma.ticket.findMany({
+        where,
+        include: {
+          event: {
+            select: { id: true, title: true, slug: true, startAt: true, venueName: true, venueAddress: true, posterObjectKey: true },
+          },
+          ticketType: { select: { name: true, price: true } },
+          checkIn: { select: { checkedInAt: true, result: true } },
+          order: { select: { id: true, orderNumber: true, status: true } },
+          attendee: { select: { attendeeName: true, attendeeEmail: true } },
         },
-        ticketType: { select: { name: true, price: true } },
-        checkIn: { select: { checkedInAt: true, result: true } },
-        order: { select: { id: true, orderNumber: true, status: true } },
-        attendee: { select: { attendeeName: true, attendeeEmail: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+        orderBy: { createdAt: 'desc' },
+      });
 
-    return { tickets };
+      return { tickets };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      request.log.error({ err, userId }, 'Failed to list tickets');
+      return reply.status(500).send({ error: 'Failed to load tickets', message });
+    }
   }
 
   async getByNumber(request: FastifyRequest, reply: FastifyReply) {

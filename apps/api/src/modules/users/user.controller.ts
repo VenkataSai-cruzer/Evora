@@ -25,63 +25,69 @@ export class UserController {
    * Attendee overview dashboard — returns summary stats, action items, and upcoming bookings.
    * Uses the user's own orders (not public events) to determine state.
    */
-  async getOverview(request: FastifyRequest, _reply: FastifyReply) {
+  async getOverview(request: FastifyRequest, reply: FastifyReply) {
     const userId = request.user!.id;
     const now = new Date();
 
-    const [orders, tickets] = await Promise.all([
-      prisma.order.findMany({
-        where: { userId },
-        include: {
-          event: { select: { id: true, title: true, slug: true, startAt: true, endAt: true, venueName: true, posterObjectKey: true } },
-          attendees: { select: { id: true, attendeeName: true, attendeeEmail: true } },
-          paymentProof: {
-            select: { id: true, status: true, utrNumber: true, submittedAt: true, reviewedAt: true, rejectionReason: true },
+    try {
+      const [orders, tickets] = await Promise.all([
+        prisma.order.findMany({
+          where: { userId },
+          include: {
+            event: { select: { id: true, title: true, slug: true, startAt: true, endAt: true, venueName: true, posterObjectKey: true } },
+            attendees: { select: { id: true, attendeeName: true, attendeeEmail: true } },
+            paymentProof: {
+              select: { id: true, status: true, utrNumber: true, submittedAt: true, reviewedAt: true, rejectionReason: true },
+            },
           },
-        },
-        orderBy: { createdAt: 'desc' },
-        take: 20,
-      }),
-      prisma.ticket.findMany({
-        where: { userId, status: { not: 'CANCELLED' } },
-        include: {
-          event: { select: { title: true, slug: true, startAt: true, venueName: true } },
-          ticketType: { select: { name: true } },
-        },
-        orderBy: { createdAt: 'desc' },
-      }),
-    ]);
+          orderBy: { createdAt: 'desc' },
+          take: 20,
+        }),
+        prisma.ticket.findMany({
+          where: { userId, status: { not: 'CANCELLED' } },
+          include: {
+            event: { select: { title: true, slug: true, startAt: true, venueName: true } },
+            ticketType: { select: { name: true } },
+          },
+          orderBy: { createdAt: 'desc' },
+        }),
+      ]);
 
-    // Compute summary
-    const summary = {
-      upcomingBookings: orders.filter((o) => o.status === 'CONFIRMED' && o.event?.startAt && new Date(o.event.startAt) > now).length,
-      actionRequired: orders.filter((o) => o.status === 'PENDING_PAYMENT' || o.status === 'REJECTED').length,
-      availableTickets: tickets.filter((t) => t.status === 'CONFIRMED').length,
-      pastEvents: orders.filter((o) => o.event?.startAt && new Date(o.event.startAt) <= now).length,
-    };
+      // Compute summary
+      const summary = {
+        upcomingBookings: orders.filter((o) => o.status === 'CONFIRMED' && o.event?.startAt && new Date(o.event.startAt) > now).length,
+        actionRequired: orders.filter((o) => o.status === 'PENDING_PAYMENT' || o.status === 'REJECTED').length,
+        availableTickets: tickets.filter((t) => t.status === 'CONFIRMED').length,
+        pastEvents: orders.filter((o) => o.event?.startAt && new Date(o.event.startAt) <= now).length,
+      };
 
-    // Action items — bookings needing attendee action
-    const actions = orders
-      .filter((o) => o.status === 'PENDING_PAYMENT' || o.status === 'REJECTED' || o.status === 'PENDING_VERIFICATION')
-      .map((o) => ({
-        orderNumber: o.orderNumber,
-        eventName: o.event?.title || 'Event',
-        status: o.status,
-        action: o.status === 'PENDING_PAYMENT' ? 'CONTINUE_PAYMENT' as const
-              : o.status === 'REJECTED' ? 'RESUBMIT_PROOF' as const
-              : 'UNDER_REVIEW' as const,
-        expiresAt: o.expiresAt?.toISOString() || null,
-      }));
+      // Action items — bookings needing attendee action
+      const actions = orders
+        .filter((o) => o.status === 'PENDING_PAYMENT' || o.status === 'REJECTED' || o.status === 'PENDING_VERIFICATION')
+        .map((o) => ({
+          orderNumber: o.orderNumber,
+          eventName: o.event?.title || 'Event',
+          status: o.status,
+          action: o.status === 'PENDING_PAYMENT' ? 'CONTINUE_PAYMENT' as const
+                : o.status === 'REJECTED' ? 'RESUBMIT_PROOF' as const
+                : 'UNDER_REVIEW' as const,
+          expiresAt: o.expiresAt?.toISOString() || null,
+        }));
 
-    // Upcoming confirmed bookings
-    const upcomingBookings = orders.filter((o) => o.status === 'CONFIRMED' && o.event?.startAt && new Date(o.event.startAt) > now);
+      // Upcoming confirmed bookings (return raw — Fastify serializes Dates to ISO strings)
+      const upcomingBookings = orders.filter((o) => o.status === 'CONFIRMED' && o.event?.startAt && new Date(o.event.startAt) > now);
 
-    return {
-      summary,
-      actions,
-      upcomingBookings,
-      totalOrders: orders.length,
-    };
+      return {
+        summary,
+        actions,
+        upcomingBookings,
+        totalOrders: orders.length,
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      request.log.error({ err, userId }, 'Failed to load attendee overview');
+      return reply.status(500).send({ error: 'Failed to load overview', message });
+    }
   }
 
   async getDashboard(request: FastifyRequest, _reply: FastifyReply) {
