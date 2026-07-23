@@ -1,0 +1,713 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Development: SQLite (config in .env)
+// Production:  PostgreSQL on Supabase
+// ═══════════════════════════════════════════════════════════════════
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ───────────────────────────────────────────────
+// USER & AUTH
+// ───────────────────────────────────────────────
+
+model User {
+  id              String    @id @default(uuid())
+  name            String
+  email           String    @unique
+  phone           String?
+  passwordHash    String?
+  role            String    @default("ATTENDEE") // ATTENDEE | ORGANIZER | SCANNER | ADMIN
+  status          String    @default("ACTIVE") // ACTIVE | SUSPENDED | DELETED
+  emailVerifiedAt DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  orders                  Order[]
+  tickets                 Ticket[]
+  issuedTickets           Ticket[]                @relation("TicketIssuedBy")
+  checkInsPerformed       CheckIn[]               @relation("CheckInScanner")
+  checkInAttempts         CheckInAttempt[]
+  sessions                Session[]
+  auditLogs               AuditLog[]
+  // Event organizer (events this user owns)
+  organizedEvents         Event[]
+  eventFaqAuthors         EventFAQ[]
+  scheduleItemAuthors     EventScheduleItem[]
+  eventUpdateAuthors      EventUpdate[]
+  organizerAssignments    OrganizerAssignment[]
+  scannerAssignments      ScannerAssignment[]
+  assignedOrganizerEvents OrganizerAssignment[]   @relation("OrganizerAssignedBy")
+  assignedScannerEvents   ScannerAssignment[]     @relation("ScannerAssignedBy")
+  reviewedPaymentProofs       PaymentProof[]          @relation("PaymentProofReviewedBy")
+  submittedPaymentProofs      PaymentProof[]          @relation("PaymentProofSubmittedBy")
+  paymentProofHistorySubmitted PaymentProofHistory[] @relation("PaymentProofHistorySubmittedBy")
+  paymentProofHistoryReviewed  PaymentProofHistory[] @relation("PaymentProofHistoryReviewedBy")
+  notificationLogs        NotificationLog[]
+  passwordResetTokens     PasswordResetToken[]
+
+  @@index([role])
+  @@index([status])
+}
+
+model Session {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// ───────────────────────────────────────────────
+// PASSWORD RESET TOKEN
+// ───────────────────────────────────────────────
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String    @unique // SHA-256 of the raw token
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// ───────────────────────────────────────────────
+// ORGANIZER & SCANNER ASSIGNMENTS
+// ───────────────────────────────────────────────
+
+model OrganizerAssignment {
+  id           String   @id @default(uuid())
+  organizerId  String
+  eventId      String
+  permissions  String   @default("{}") // JSON: { canApprovePayments, canExport, canSendAnnouncements }
+  assignedById String
+  createdAt    DateTime @default(now())
+
+  organizer  User  @relation(fields: [organizerId], references: [id])
+  event      Event @relation(fields: [eventId], references: [id])
+  assignedBy User  @relation("OrganizerAssignedBy", fields: [assignedById], references: [id])
+
+  @@unique([organizerId, eventId])
+  @@index([eventId])
+  @@index([organizerId])
+}
+
+model ScannerAssignment {
+  id           String   @id @default(uuid())
+  scannerId    String
+  eventId      String
+  gateName     String?
+  isActive     Boolean  @default(true)
+  assignedById String
+  createdAt    DateTime @default(now())
+
+  scanner    User  @relation(fields: [scannerId], references: [id])
+  event      Event @relation(fields: [eventId], references: [id])
+  assignedBy User  @relation("ScannerAssignedBy", fields: [assignedById], references: [id])
+
+  @@unique([scannerId, eventId])
+  @@index([eventId])
+  @@index([scannerId])
+}
+
+// ───────────────────────────────────────────────
+// EVENT
+// ───────────────────────────────────────────────
+
+model Event {
+  id                 String    @id @default(uuid())
+  title              String
+  slug               String    @unique
+  shortDescription   String?
+  description        String?
+  posterObjectKey    String?
+  status             String    @default("DRAFT") // DRAFT | PUBLISHED | COMPLETED | CANCELLED
+  startAt            DateTime
+  endAt              DateTime?
+  venueName          String
+  venueAddress       String?
+  mapUrl             String?
+  timezone           String    @default("Asia/Kolkata")
+  totalCapacity      Int       @default(0)
+  salesStartAt       DateTime?
+  salesEndAt         DateTime?
+  salesPaused        Boolean   @default(false)
+  bookingClosed      Boolean   @default(false)
+  contactEmail       String?
+  contactPhone       String?
+  terms              String?
+  ticketNumberPrefix String    @default("") // e.g. "7N-2026-HYD-"
+  organizerId        String    // Who owns/created this event
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  organizer            User                  @relation(fields: [organizerId], references: [id])
+  ticketTypes          TicketType[]
+  orders               Order[]
+  tickets              Ticket[]
+  checkIns             CheckIn[]
+  checkInAttempts      CheckInAttempt[]
+  branding             EventBranding?
+  partners             EventPartner[]
+  templates            TicketTemplate[]
+  auditLogs            AuditLog[]
+  // Content modules
+  faqs                 EventFAQ[]
+  performers           EventPerformer[]
+  scheduleItems        EventScheduleItem[]
+  updates              EventUpdate[]
+  organizerAssignments OrganizerAssignment[]
+  scannerAssignments   ScannerAssignment[]
+  paymentProofs        PaymentProof[]
+  paymentProofHistory  PaymentProofHistory[]
+
+  @@index([slug])
+  @@index([status])
+  @@index([startAt])
+  @@index([organizerId])
+}
+
+model EventBranding {
+  id                     String   @id @default(uuid())
+  eventId                String   @unique
+  venueLogoObjectKey     String?
+  primaryLogoObjectKey   String?
+  footerArtworkObjectKey String?
+  contentPartnerHeading  String?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  event Event @relation(fields: [eventId], references: [id])
+}
+
+model EventPartner {
+  id            String  @id @default(uuid())
+  eventId       String
+  name          String
+  logoObjectKey String?
+  displayOrder  Int     @default(0)
+  partnerType   String  @default("CONTENT_PARTNER") // CONTENT_PARTNER | SPONSOR | VENUE
+
+  event Event @relation(fields: [eventId], references: [id])
+
+  @@index([eventId, displayOrder])
+}
+
+// ───────────────────────────────────────────────
+// EVENT CONTENT MODULES
+// ───────────────────────────────────────────────
+
+model EventFAQ {
+  id          String   @id @default(uuid())
+  eventId     String
+  authorId    String?
+  question    String
+  answer      String
+  sortOrder   Int      @default(0)
+  isPublished Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  event  Event @relation(fields: [eventId], references: [id])
+  author User? @relation(fields: [authorId], references: [id])
+
+  @@index([eventId, sortOrder])
+  @@index([eventId, isPublished])
+}
+
+model EventPerformer {
+  id          String   @id @default(uuid())
+  eventId     String
+  name        String
+  bio         String?
+  imageUrl    String?
+  instrument  String?
+  role        String   @default("PERFORMER")
+  sortOrder   Int      @default(0)
+  isPublished Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  event Event @relation(fields: [eventId], references: [id])
+
+  @@index([eventId, sortOrder])
+  @@index([eventId, isPublished])
+}
+
+model EventScheduleItem {
+  id          String   @id @default(uuid())
+  eventId     String
+  authorId    String?
+  title       String
+  description String?
+  startTime   String
+  endTime     String?
+  sortOrder   Int      @default(0)
+  isPublished Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  event  Event @relation(fields: [eventId], references: [id])
+  author User? @relation(fields: [authorId], references: [id])
+
+  @@index([eventId, sortOrder])
+}
+
+model EventUpdate {
+  id          String   @id @default(uuid())
+  eventId     String
+  authorId    String?
+  message     String
+  updateType  String   @default("INSTRUCTION")
+  visibility  String   @default("PUBLIC") // PUBLIC | ATTENDEES_ONLY
+  isPinned    Boolean  @default(false)
+  publishedAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  event  Event @relation(fields: [eventId], references: [id])
+  author User? @relation(fields: [authorId], references: [id])
+
+  @@index([eventId, publishedAt])
+  @@index([eventId, updateType])
+}
+
+model ContactMessage {
+  id        String   @id @default(uuid())
+  name      String
+  email     String
+  subject   String
+  message   String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([isRead])
+}
+
+// ───────────────────────────────────────────────
+// TICKET TYPES
+// ───────────────────────────────────────────────
+
+model TicketType {
+  id          String    @id @default(uuid())
+  eventId     String
+  name        String
+  description String?
+  price       Int       @default(0) // in paise (0 = free)
+  currency    String    @default("INR")
+  capacity    Int       @default(0)
+  soldCount   Int       @default(0)
+  maxPerOrder Int       @default(10)
+  saleStartAt DateTime?
+  saleEndAt   DateTime?
+  active      Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  event     Event           @relation(fields: [eventId], references: [id])
+  attendees OrderAttendee[]
+  tickets   Ticket[]
+
+  @@index([eventId])
+  @@index([eventId, active])
+}
+
+// ───────────────────────────────────────────────
+// ORDER
+// ───────────────────────────────────────────────
+
+model Order {
+  id                 String    @id @default(uuid())
+  orderNumber        String    @unique
+  eventId            String
+  userId             String
+  status             String    @default("PENDING_PAYMENT") // PENDING_PAYMENT | PENDING_VERIFICATION | CONFIRMED | REJECTED | FAILED | EXPIRED | CANCELLED
+  paymentMethod      String    @default("BANK_TRANSFER")   // BANK_TRANSFER | COMPLIMENTARY
+  subtotal           Int       @default(0)
+  fees               Int       @default(0)
+  total              Int       @default(0)
+  currency           String    @default("INR")
+  paymentProvider    String?   // utr | test | free
+  paymentReference   String?
+  resubmissionCount  Int       @default(0) // tracks how many times user resubmitted after rejection
+  expiresAt          DateTime?
+  paidAt             DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  event              Event                @relation(fields: [eventId], references: [id])
+  user               User                 @relation(fields: [userId], references: [id])
+  attendees          OrderAttendee[]
+  tickets            Ticket[]
+  payments           Payment[]
+  paymentProof       PaymentProof?
+  paymentProofHistory PaymentProofHistory[]
+
+  @@index([orderNumber])
+  @@index([eventId])
+  @@index([userId])
+  @@index([status])
+}
+
+model OrderAttendee {
+  id            String   @id @default(uuid())
+  orderId       String
+  ticketTypeId  String
+  attendeeName  String
+  attendeeEmail String?
+  attendeePhone String?
+  createdAt     DateTime @default(now())
+
+  order      Order      @relation(fields: [orderId], references: [id])
+  ticketType TicketType @relation(fields: [ticketTypeId], references: [id])
+  ticket     Ticket?    // null until ticket generated after payment
+
+  @@index([orderId])
+  @@index([attendeeEmail])
+}
+
+// ───────────────────────────────────────────────
+// PAYMENT PROOF (with Google Drive storage)
+// ───────────────────────────────────────────────
+
+model PaymentProof {
+  id                   String    @id @default(uuid())
+  orderId              String    @unique // one active proof per order
+  submittedById        String
+  eventId              String
+  utrNumber            String    @unique // normalized, must be globally unique
+  amount               Int       // expected amount in paise
+  originalFileName     String
+  storedFileName       String    // randomized
+  mimeType             String
+  fileSize             Int
+  checksum             String    // SHA-256 of file contents
+  googleDriveFileId    String?
+  googleDriveViewUrl   String?
+  storageProvider      String    @default("GOOGLE_DRIVE") // GOOGLE_DRIVE | R2 | LOCAL
+  status               String    @default("PENDING") // PENDING | APPROVED | REJECTED | RESUBMISSION_REQUESTED
+  rejectionReason      String?
+  submittedAt          DateTime  @default(now())
+  reviewedAt           DateTime?
+  reviewedById         String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  order       Order  @relation(fields: [orderId], references: [id])
+  submittedBy User   @relation("PaymentProofSubmittedBy", fields: [submittedById], references: [id])
+  event       Event  @relation(fields: [eventId], references: [id])
+  reviewedBy  User?  @relation("PaymentProofReviewedBy", fields: [reviewedById], references: [id])
+
+  @@index([status])
+  @@index([eventId])
+  @@index([submittedById])
+  @@index([utrNumber])
+}
+
+// ───────────────────────────────────────────────
+// PAYMENT PROOF HISTORY (immutable audit trail of all proof submissions)
+// ───────────────────────────────────────────────
+
+model PaymentProofHistory {
+  id                   String    @id @default(uuid())
+  orderId              String
+  originalProofId      String?   // reference to the original PaymentProof (null if deleted)
+  submittedById        String
+  eventId              String
+  utrNumber            String
+  amount               Int       // expected amount in paise
+  originalFileName     String
+  storedFileName       String    // randomized
+  mimeType             String
+  fileSize             Int
+  checksum             String    // SHA-256 of file contents
+  googleDriveFileId    String?
+  googleDriveViewUrl   String?
+  storageProvider      String    @default("GOOGLE_DRIVE")
+  status               String    // PENDING | APPROVED | REJECTED | RESUBMISSION_REQUESTED
+  rejectionReason      String?
+  submittedAt          DateTime
+  reviewedAt           DateTime?
+  reviewedById         String?
+  archivedAt           DateTime  @default(now()) // when this record was archived (superseded)
+  createdAt            DateTime  @default(now())
+
+  order       Order  @relation(fields: [orderId], references: [id])
+  submittedBy User   @relation("PaymentProofHistorySubmittedBy", fields: [submittedById], references: [id])
+  event       Event  @relation(fields: [eventId], references: [id])
+  reviewedBy  User?  @relation("PaymentProofHistoryReviewedBy", fields: [reviewedById], references: [id])
+
+  @@index([orderId])
+  @@index([eventId])
+  @@index([submittedById])
+  @@index([utrNumber])
+  @@index([archivedAt])
+}
+
+// ───────────────────────────────────────────────
+// PAYMENT (internal ledger record, kept for backward compat)
+// ───────────────────────────────────────────────
+
+model Payment {
+  id                String    @id @default(uuid())
+  orderId           String
+  amount            Int
+  currency          String    @default("INR")
+  method            String    // utr | test | free | complimentary
+  status            String    @default("PENDING") // PENDING | SUCCEEDED | FAILED | REFUNDED
+  utrNumber         String?   @unique
+  providerPaymentId String?
+  verifiedAt        DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  order Order @relation(fields: [orderId], references: [id])
+
+  @@index([orderId])
+  @@index([status])
+  @@index([utrNumber])
+}
+
+// ───────────────────────────────────────────────
+// TICKET
+// ───────────────────────────────────────────────
+
+model Ticket {
+  id              String    @id @default(uuid())
+  ticketNumber    String    @unique
+  eventId         String
+  userId          String    // registered account (nullable for guest comps linked to no account)
+  orderId         String?   // null for complimentary tickets
+  orderAttendeeId String?   @unique
+  ticketTypeId    String
+  // Extended fields for Phase 4
+  attendeeName    String    @default("")
+  attendeeEmail   String    @default("")
+  attendeePhone   String    @default("")
+  ticketCategory  String    @default("PAID") // PAID | COMPLIMENTARY | VIP | MEDIA | ARTIST | SPONSOR | STAFF | VOLUNTEER
+  source          String    @default("PAYMENT_APPROVAL") // PAYMENT_APPROVAL | ADMIN_MANUAL | SYSTEM
+  visibility      String    @default("STANDARD") // STANDARD | ADMIN_ONLY
+  issuedById      String?
+  issuedByRole    String?
+  pricePaid       Int       @default(0)
+  status          String    @default("CONFIRMED") // CONFIRMED | CHECKED_IN | REVOKED | CANCELLED | EXPIRED
+  qrToken         String?   @unique // the actual token (generated securely, stored here for QR rendering only)
+  qrTokenHash     String?   @unique // SHA-256 of qrToken — used for lookup on scan
+  templateVersion Int       @default(1)
+  pngObjectKey    String?
+  pdfObjectKey    String?
+  renderingStatus String    @default("PENDING") // PENDING | COMPLETED | FAILED
+  issuedAt        DateTime  @default(now())
+  // Revocation tracking
+  revokedAt       DateTime?
+  revokeReason    String?
+  // Check-in tracking (existing)
+  checkedInAt     DateTime?
+  checkedInById   String?
+  gateName        String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  event      Event          @relation(fields: [eventId], references: [id])
+  user       User           @relation(fields: [userId], references: [id])
+  order      Order?         @relation(fields: [orderId], references: [id])
+  attendee   OrderAttendee? @relation(fields: [orderAttendeeId], references: [id])
+  ticketType TicketType     @relation(fields: [ticketTypeId], references: [id])
+  issuedBy   User?          @relation("TicketIssuedBy", fields: [issuedById], references: [id])
+  checkIn    CheckIn?
+  checkInAttempts CheckInAttempt[]
+
+  @@index([ticketNumber])
+  @@index([eventId])
+  @@index([userId])
+  @@index([orderId])
+  @@index([status])
+  @@index([ticketCategory])
+  @@index([visibility])
+  @@index([source])
+}
+
+// ───────────────────────────────────────────────
+// TICKET TEMPLATE
+// ───────────────────────────────────────────────
+
+model TicketTemplate {
+  id              String    @id @default(uuid())
+  eventId         String
+  version         Int       @default(1)
+  sourceObjectKey String
+  width           Int
+  height          Int
+  outputFormat    String    @default("PNG")
+  active          Boolean   @default(false)
+  lockedAt        DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  event  Event                 @relation(fields: [eventId], references: [id])
+  fields TicketTemplateField[]
+
+  @@unique([eventId, version])
+  @@index([eventId, active])
+}
+
+model TicketTemplateField {
+  id              String  @id @default(uuid())
+  templateId      String
+  fieldName       String // EVENT_NAME | EVENT_DATE | EVENT_TIME | VENUE_NAME | VENUE_ADDRESS | ATTENDEE_NAME | TICKET_TYPE | QUANTITY | TICKET_NUMBER | ORDER_NUMBER | QR_CODE | BARCODE | TICKET_CATEGORY
+  x               Int
+  y               Int
+  width           Int
+  height          Int
+  fontFamily      String  @default("Inter")
+  fontSize        Int     @default(24)
+  minimumFontSize Int     @default(10)
+  fontWeight      String  @default("normal")
+  alignment       String  @default("left")
+  textTransform   String  @default("none")
+  color           String  @default("#000000")
+  visible         Boolean @default(true)
+
+  template TicketTemplate @relation(fields: [templateId], references: [id])
+
+  @@index([templateId])
+}
+
+// ───────────────────────────────────────────────
+// CHECK-IN (immutable successful check-in record)
+// ───────────────────────────────────────────────
+
+model CheckIn {
+  id                  String   @id @default(uuid())
+  ticketId            String   @unique // one successful check-in per ticket
+  eventId             String
+  scannerId           String
+  scannerAssignmentId String?
+  gateName            String?
+  scannerDevice       String?
+  result              String   @default("SUCCESS") // SUCCESS
+  checkedInAt         DateTime @default(now())
+  metadata            String   @default("{}")
+
+  ticket  Ticket @relation(fields: [ticketId], references: [id])
+  event   Event  @relation(fields: [eventId], references: [id])
+  scanner User   @relation("CheckInScanner", fields: [scannerId], references: [id])
+
+  @@index([eventId])
+  @@index([ticketId])
+  @@index([checkedInAt])
+}
+
+// ───────────────────────────────────────────────
+// CHECK-IN ATTEMPTS (every scan attempt including duplicates)
+// ───────────────────────────────────────────────
+
+model CheckInAttempt {
+  id            String   @id @default(uuid())
+  ticketId      String
+  eventId       String
+  scannerId     String
+  gateName      String?
+  scannerDevice String?
+  result        String   // SUCCESS | ALREADY_CHECKED_IN | INVALID_TICKET | WRONG_EVENT | CANCELLED | EXPIRED | NOT_ACTIVE
+  scannedAt     DateTime @default(now())
+  metadata      String   @default("{}")
+
+  ticket  Ticket @relation(fields: [ticketId], references: [id])
+  event   Event  @relation(fields: [eventId], references: [id])
+  scanner User   @relation(fields: [scannerId], references: [id])
+
+  @@index([ticketId])
+  @@index([eventId])
+  @@index([scannerId])
+  @@index([result])
+  @@index([scannedAt])
+}
+
+// ───────────────────────────────────────────────
+// AUDIT LOG
+// ───────────────────────────────────────────────
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  actorId    String?
+  actorRole  String?
+  eventId    String?
+  action     String
+  entityType String
+  entityId   String
+  ipAddress  String?
+  userAgent  String?
+  metadata   String   @default("{}")
+  createdAt  DateTime @default(now())
+
+  actor User?  @relation(fields: [actorId], references: [id])
+  event Event? @relation(fields: [eventId], references: [id])
+
+  @@index([entityType, entityId])
+  @@index([action])
+  @@index([actorId])
+  @@index([eventId])
+  @@index([createdAt])
+}
+
+// ───────────────────────────────────────────────
+// NOTIFICATION LOG
+// ───────────────────────────────────────────────
+
+model NotificationLog {
+  id          String    @id @default(uuid())
+  userId      String?
+  channel     String    // EMAIL | TELEGRAM
+  type        String    // PAYMENT_RECEIVED | PAYMENT_APPROVED | PAYMENT_REJECTED | TICKET_ISSUED | COMPLIMENTARY_ISSUED | ANNOUNCEMENT
+  recipient   String    // email address or telegram chat ID
+  subject     String?
+  status      String    @default("PENDING") // PENDING | SENT | FAILED
+  attempts    Int       @default(0)
+  lastAttempt DateTime?
+  error       String?
+  metadata    String    @default("{}")
+  providerMessageId String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([status])
+  @@index([type])
+  @@index([userId])
+  @@index([createdAt])
+}
+
+// ───────────────────────────────────────────────
+// PAYMENT WEBHOOK IDEMPOTENCY
+// ───────────────────────────────────────────────
+
+model PaymentWebhookEvent {
+  id               String    @id @default(uuid())
+  provider         String    // utr | test
+  externalEventId  String    // Provider's unique event ID
+  payloadHash      String?
+  processingStatus String    @default("PENDING") // PENDING | PROCESSED | FAILED
+  processedAt      DateTime?
+  createdAt        DateTime  @default(now())
+
+  @@unique([provider, externalEventId])
+  @@index([processingStatus])
+}
