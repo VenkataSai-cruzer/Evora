@@ -10,6 +10,11 @@ export interface ValidationResult {
 
 /**
  * Validate that the Ticket.png template exists and is readable.
+ *
+ * NOTE: This check is non-fatal — the server can start and serve all
+ * endpoints even without the template image. Only the PNG/PDF ticket
+ * rendering endpoints will fail at request time if the template is absent.
+ * The HTML-based ticket rendering does not need this file.
  */
 async function validateTicketTemplate(): Promise<{ name: string; status: 'pass' | 'fail'; message?: string }> {
   const templatePath = resolve(process.cwd(), 'assets', 'Ticket.png');
@@ -17,12 +22,14 @@ async function validateTicketTemplate(): Promise<{ name: string; status: 'pass' 
     await access(templatePath, constants.R_OK);
     const metadata = await sharp(templatePath).metadata();
     if (!metadata.width || !metadata.height) {
-      return { name: 'ticket_template', status: 'fail', message: 'Ticket template has invalid dimensions' };
+      return { name: 'ticket_template', status: 'pass', message: 'WARNING: Ticket template has invalid dimensions — PNG/PDF rendering will fail' };
     }
     return { name: 'ticket_template', status: 'pass' };
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unknown error';
-    return { name: 'ticket_template', status: 'fail', message: `Ticket template missing or unreadable: ${msg}` };
+    console.warn(`[Startup] WARNING: Ticket template missing — ${msg}`);
+    console.warn('[Startup] WARNING: PNG/PDF ticket rendering will fail at request time. Place Ticket.png in assets/ to enable it.');
+    return { name: 'ticket_template', status: 'pass', message: 'WARNING: Ticket template not found — PNG/PDF rendering unavailable' };
   }
 }
 
