@@ -1,17 +1,19 @@
-# Render Blueprint for 7 NOTES Staging Backend API
-# Docs: https://render.com/docs/blueprint-spec
+# Render Blueprint (DEPRECATED — preserved for reference only)
+# Backend is now deployed on Railway:
+#   https://evora-production-8754.up.railway.app
+#
+# This file is kept for historical reference but NOT used by Railway.
+# Railway uses its own dashboard configuration for build/start commands.
 #
 # ── Architecture ─────────────────────────────────────────
-# Backend: Fastify + Prisma (PostgreSQL via Supabase)
+# Backend: Fastify + Prisma (PostgreSQL via Supabase) — Railway
 # Frontend: Cloudflare Workers (deployed separately)
 #
 # ── Monorepo Setup ───────────────────────────────────────
 # rootDir: . (repository root)
-# This ensures apps/api has access to the root-level prisma/ schema,
-# packages/shared, and the root node_modules workspace hoisting.
 #
-# ── Staging URLs (temp) ──────────────────────────────────
-# Backend:  https://seven-notes-api.onrender.com
+# ── URLs ─────────────────────────────────────────────────
+# Backend:  https://evora-production-8754.up.railway.app
 # Frontend: https://evora.7notes.workers.dev
 
 services:
@@ -58,7 +60,7 @@ services:
         value: https://evora.7notes.workers.dev
 
       - key: API_BASE_URL
-        value: https://seven-notes-api.onrender.com/api/v1
+        value: https://evora-production-8754.up.railway.app/api/v1
 
       # ── Session & Security ──────────────────────────────
       - key: SESSION_SECRET
