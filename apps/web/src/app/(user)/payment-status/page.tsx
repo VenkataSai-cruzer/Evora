@@ -129,7 +129,6 @@ function PaymentStatusContent() {
   const isPendingPayment = proofStatus?.orderStatus === 'PENDING_PAYMENT';
   const isPendingVerification = proofStatus?.orderStatus === 'PENDING_VERIFICATION';
   const isRejected = proofStatus?.orderStatus === 'REJECTED';
-  const hasProof = proofStatus?.proof !== null;
   const proofRejectionReason = proofStatus?.proof?.rejectionReason;
 
   // Build timeline

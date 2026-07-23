@@ -24,14 +24,6 @@ interface AttendeeOverview {
   totalOrders: number;
 }
 
-const STATUS_BADGE: Record<string, { label: string; color: string }> = {
-  PENDING_PAYMENT: { label: 'Awaiting Payment', color: 'bg-blue-500/10 text-blue-400 border-blue-500/20' },
-  PENDING_VERIFICATION: { label: 'Under Review', color: 'bg-warning/10 text-warning border-warning/20' },
-  CONFIRMED: { label: 'Confirmed', color: 'bg-success/10 text-success border-success/20' },
-  REJECTED: { label: 'Rejected', color: 'bg-error/10 text-error border-error/20' },
-  CANCELLED: { label: 'Cancelled', color: 'bg-surface-elevated text-text-muted border-[var(--color-border)]' },
-};
-
 const ACTION_LABEL: Record<string, string> = {
   CONTINUE_PAYMENT: 'Continue Payment',
   RESUBMIT_PROOF: 'Resubmit Proof',
