@@ -4,13 +4,18 @@ import { access, constants } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 export async function healthRoutes(app: FastifyInstance) {
+  /**
+   * GET /api/v1/health
+   * Lightweight health check — no DB queries, no secrets.
+   * Safe for load balancer and monitoring every few seconds.
+   */
   app.get('/health', async (_request, _reply) => {
     return {
       status: 'ok',
-      timestamp: new Date().toISOString(),
-      uptime: process.uptime(),
-      environment: process.env.NODE_ENV || 'development',
+      service: 'evora-api',
       version: process.env.APP_VERSION || '0.1.0',
+      sha: process.env.RAILWAY_GIT_COMMIT_SHA || process.env.SOURCE_VERSION || undefined,
+      uptime: Math.floor(process.uptime()),
     };
   });
 

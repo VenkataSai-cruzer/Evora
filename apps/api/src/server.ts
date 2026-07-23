@@ -32,7 +32,26 @@ async function start() {
 
   try {
     await app.listen({ host: HOST, port: PORT });
-    app.log.info(`Server running at http://${HOST}:${PORT}`);
+    const version = process.env.APP_VERSION || '0.1.0';
+    const sha = process.env.RAILWAY_GIT_COMMIT_SHA || process.env.SOURCE_VERSION || 'unknown';
+    const env = process.env.NODE_ENV || 'development';
+    const prismaVersion = '5.22.0';
+    // Dynamic version reading would use: import { prismaVersion } from '@prisma/client';
+    // but the enum export requires a newer @prisma/client version.
+    // Update this string when Prisma is upgraded.
+
+    // Structured log entry for log aggregators
+    app.log.info({ version, sha, env, prismaVersion, host: HOST, port: PORT }, 'Server started');
+
+    // Visible startup banner for deployment verification in logs
+    const border = '='.repeat(56);
+    console.log(`\n${border}`);
+    console.log(`  Evora API`);
+    console.log(`  Version:    ${version} (${sha})`);
+    console.log(`  Env:        ${env}`);
+    console.log(`  Prisma:     ${prismaVersion}`);
+    console.log(`  Listening:  ${HOST}:${PORT}`);
+    console.log(`${border}\n`);
   } catch (err) {
     app.log.error(err, 'Failed to start server');
     process.exit(1);

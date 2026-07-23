@@ -13,7 +13,7 @@ function AdminSidebar() {
   return (
     <aside className="hidden w-64 flex-col border-r border-[var(--color-border)] bg-surface lg:flex">
       <div className="border-b border-[var(--color-border)] p-4">
-        <Link href="/admin" className="text-sm font-semibold text-white">✦ 7 NOTES</Link>
+        <Link href="/admin" className="text-sm font-semibold text-white">✦ Evora</Link>
         <p className="mt-0.5 text-xs text-text-muted">Admin</p>
       </div>
       <nav className="flex-1 space-y-1 overflow-y-auto p-3">

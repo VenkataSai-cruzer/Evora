@@ -9,7 +9,7 @@ interface AdminEvent {
   ticketTypes: { id: string; name: string }[];
 }
 
-const TICKET_CATEGORIES = ['COMPLIMENTARY', 'VIP', 'MEDIA', 'ARTIST', 'SPONSOR', 'STAFF', 'VOLUNTEER'];
+const TICKET_CATEGORIES = ['VIP', 'MEDIA', 'ARTIST', 'SPONSOR', 'STAFF', 'VOLUNTEER'];
 
 export default function ComplimentaryTicketsPage() {
   const [events, setEvents] = useState<AdminEvent[]>([]);
@@ -23,10 +23,9 @@ export default function ComplimentaryTicketsPage() {
     attendeeEmail: '',
     attendeePhone: '',
     quantity: 1,
-    ticketCategory: 'COMPLIMENTARY',
+    ticketCategory: 'VIP',
     reason: '',
     internalNote: '',
-    sendNotification: true,
     ticketTypeId: '',
   });
 
@@ -50,10 +49,9 @@ export default function ComplimentaryTicketsPage() {
         attendeeEmail: form.attendeeEmail,
         attendeePhone: form.attendeePhone || undefined,
         quantity: form.quantity,
-        ticketCategory: form.ticketCategory,
+        ticketCategory: form.ticketCategory || undefined,
         reason: form.reason,
         internalNote: form.internalNote || undefined,
-        sendNotification: form.sendNotification,
         ticketTypeId: form.ticketTypeId || undefined,
       });
       setResult({ success: true, message: `${res.count} ticket(s) issued successfully.`, count: res.count });
@@ -69,12 +67,12 @@ export default function ComplimentaryTicketsPage() {
     <div className="max-w-xl space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-white">Complimentary Tickets</h1>
-        <p className="mt-1 text-sm text-text-secondary">Issue VIP, media, artist, or other admin-only tickets.</p>
+        <p className="mt-1 text-sm text-text-secondary">Issue complimentary tickets to attendees at no charge.</p>
       </div>
 
       <div className="rounded-xl border border-yellow-500/30 bg-yellow-500/5 px-4 py-3">
         <p className="text-xs text-yellow-400">
-          These tickets are <strong>ADMIN_ONLY</strong> visibility. Organizers cannot see them. They count toward capacity but are not visible in organizer reports.
+          These tickets do not require payment and are issued directly. They count toward event capacity.
         </p>
       </div>
 
@@ -94,10 +92,10 @@ export default function ComplimentaryTicketsPage() {
         {/* Ticket Type */}
         {selectedEvent && selectedEvent.ticketTypes.length > 0 && (
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-text-secondary">Ticket Type (optional — uses first active if blank)</label>
+            <label className="mb-1.5 block text-xs font-medium text-text-secondary">Ticket Type <span className="text-error">*</span></label>
             <select value={form.ticketTypeId} onChange={(e) => setForm((f) => ({ ...f, ticketTypeId: e.target.value }))}
-              className="w-full rounded-lg border border-[var(--color-border)] bg-surface px-3 py-2.5 text-sm text-white focus:border-primary focus:outline-none">
-              <option value="">Auto-select</option>
+              className="w-full rounded-lg border border-[var(--color-border)] bg-surface px-3 py-2.5 text-sm text-white focus:border-primary focus:outline-none" required>
+              <option value="">Select a ticket type...</option>
               {selectedEvent.ticketTypes.map((tt) => <option key={tt.id} value={tt.id}>{tt.name}</option>)}
             </select>
           </div>
@@ -105,11 +103,12 @@ export default function ComplimentaryTicketsPage() {
 
         {/* Category */}
         <div>
-          <label className="mb-1.5 block text-xs font-medium text-text-secondary">Ticket Category <span className="text-error">*</span></label>
+          <label className="mb-1.5 block text-xs font-medium text-text-secondary">Ticket Category</label>
           <select value={form.ticketCategory} onChange={(e) => setForm((f) => ({ ...f, ticketCategory: e.target.value }))}
-            className="w-full rounded-lg border border-[var(--color-border)] bg-surface px-3 py-2.5 text-sm text-white focus:border-primary focus:outline-none" required>
+            className="w-full rounded-lg border border-[var(--color-border)] bg-surface px-3 py-2.5 text-sm text-white focus:border-primary focus:outline-none">
             {TICKET_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
+          <p className="mt-1 text-xs text-text-muted">Optional — used for internal classification (VIP, Media, Artist, etc.)</p>
         </div>
 
         {/* Quantity */}
@@ -140,7 +139,7 @@ export default function ComplimentaryTicketsPage() {
 
         {/* Reason */}
         <div>
-          <label className="mb-1.5 block text-xs font-medium text-text-secondary">Reason (required) <span className="text-error">*</span></label>
+          <label className="mb-1.5 block text-xs font-medium text-text-secondary">Reason <span className="text-error">*</span></label>
           <input type="text" value={form.reason} onChange={(e) => setForm((f) => ({ ...f, reason: e.target.value }))}
             placeholder="e.g. Press pass, Artist guest, Sponsor allocation" className="w-full rounded-lg border border-[var(--color-border)] bg-surface px-3 py-2.5 text-sm text-white placeholder:text-text-muted focus:border-primary focus:outline-none" required />
         </div>
@@ -149,14 +148,8 @@ export default function ComplimentaryTicketsPage() {
         <div>
           <label className="mb-1.5 block text-xs font-medium text-text-secondary">Internal Note (optional)</label>
           <input type="text" value={form.internalNote} onChange={(e) => setForm((f) => ({ ...f, internalNote: e.target.value }))}
-            placeholder="Internal note — not sent to attendee" className="w-full rounded-lg border border-[var(--color-border)] bg-surface px-3 py-2.5 text-sm text-white placeholder:text-text-muted focus:border-primary focus:outline-none" />
+            placeholder="Internal note — not shown to attendee" className="w-full rounded-lg border border-[var(--color-border)] bg-surface px-3 py-2.5 text-sm text-white placeholder:text-text-muted focus:border-primary focus:outline-none" />
         </div>
-
-        {/* Notification toggle */}
-        <label className="flex items-center gap-3 cursor-pointer">
-          <input type="checkbox" checked={form.sendNotification} onChange={(e) => setForm((f) => ({ ...f, sendNotification: e.target.checked }))} className="h-4 w-4 rounded border-[var(--color-border)]" />
-          <span className="text-sm text-text-secondary">Send email notification to attendee</span>
-        </label>
 
         {result && (
           <div className={`rounded-lg px-4 py-3 text-sm ${result.success ? 'bg-success/10 text-success' : 'bg-error/10 text-error'}`}>
@@ -164,9 +157,9 @@ export default function ComplimentaryTicketsPage() {
           </div>
         )}
 
-        <button type="submit" disabled={submitting || !form.eventId || !form.attendeeName || !form.attendeeEmail || !form.reason}
+        <button type="submit" disabled={submitting || !form.eventId || !form.ticketTypeId || !form.attendeeName || !form.attendeeEmail || !form.reason}
           className="w-full rounded-lg bg-primary py-2.5 text-sm font-medium text-white hover:bg-primary-hover disabled:opacity-50 transition-colors">
-          {submitting ? 'Issuing...' : `Issue ${form.quantity} ${form.ticketCategory} Ticket${form.quantity > 1 ? 's' : ''}`}
+          {submitting ? 'Issuing...' : `Issue ${form.quantity} Complimentary Ticket${form.quantity > 1 ? 's' : ''}`}
         </button>
       </form>
     </div>

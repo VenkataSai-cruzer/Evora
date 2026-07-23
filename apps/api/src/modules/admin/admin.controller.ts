@@ -1,6 +1,6 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { prisma } from '../../infrastructure/database/prisma.js';
-import { finalizeApprovedOrder } from '../orders/order-finalization.service.js';
+import { finalizeApprovedOrder, releaseOrderCapacity } from '../orders/order-finalization.service.js';
 import { generateQrToken } from '../../infrastructure/rendering/qr.service.js';
 import { writeAuditLog } from '../../infrastructure/audit/audit.service.js';
 import { GoogleDriveService } from '../../infrastructure/storage/google-drive.service.js';
@@ -723,14 +723,14 @@ export class AdminController {
    * Cancel (soft-delete) any ticket by ticket number.
    *
    * Sets status to CANCELLED so the scanner rejects it.
+   * Also releases the reserved capacity (decrements soldCount)
+   * for the ticket's associated order.
+   *
    * Does NOT hard-delete the record — preserves audit trail,
    * QR token, check-in history, and order linkage.
    *
    * Idempotent: cancelling an already-CANCELLED ticket returns
    * success without error.
-   *
-   * Capacity (soldCount) is NOT automatically decremented.
-   * Admin can adjust capacity separately if needed.
    */
   async cancelTicket(request: FastifyRequest, reply: FastifyReply) {
     const { ticketNumber } = request.params as { ticketNumber: string };
@@ -738,14 +738,8 @@ export class AdminController {
 
     const ticket = await prisma.ticket.findUnique({
       where: { ticketNumber },
-      select: {
-        id: true,
-        ticketNumber: true,
-        status: true,
-        eventId: true,
-        userId: true,
-        attendeeName: true,
-        ticketCategory: true,
+      include: {
+        order: { select: { id: true } },
       },
     });
 
@@ -769,10 +763,23 @@ export class AdminController {
       });
     }
 
+    // Update ticket status to CANCELLED and release 1 unit of capacity
     await prisma.ticket.update({
       where: { ticketNumber },
       data: { status: 'CANCELLED' },
     });
+
+    // Release capacity for this specific ticket (1 unit)
+    const ticketType = await prisma.ticketType.findUnique({
+      where: { id: ticket.ticketTypeId },
+    });
+    if (ticketType) {
+      const newSoldCount = Math.max(0, ticketType.soldCount - 1);
+      await prisma.ticketType.update({
+        where: { id: ticket.ticketTypeId },
+        data: { soldCount: newSoldCount },
+      });
+    }
 
     await writeAuditLog('TICKET_CANCELLED', 'Ticket', ticket.id, {
       actorId: adminId,
@@ -790,11 +797,83 @@ export class AdminController {
 
     return reply.send({
       success: true,
-      message: `Ticket ${ticket.ticketNumber} has been cancelled.`,
+      message: `Ticket ${ticket.ticketNumber} has been cancelled. Capacity released.`,
       ticket: {
         ticketNumber: ticket.ticketNumber,
         previousStatus: ticket.status,
         status: 'CANCELLED',
+      },
+    });
+  }
+
+  /**
+   * POST /admin/orders/:id/cancel
+   * Cancel a pending order and release its reserved capacity.
+   *
+   * Eligible statuses: PENDING_PAYMENT, PENDING_VERIFICATION, REJECTED.
+   * Does NOT apply to already-CONFIRMED orders (use ticket cancellation instead).
+   *
+   * Releases capacity (decrements soldCount) for all ticket types
+   * associated with the order's attendees.
+   */
+  async cancelOrder(request: FastifyRequest, reply: FastifyReply) {
+    const { id } = request.params as { id: string };
+    const adminId = request.user!.id;
+
+    const order = await prisma.order.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        orderNumber: true,
+        status: true,
+        eventId: true,
+      },
+    });
+
+    if (!order) {
+      return reply.status(404).send({ error: 'Order not found' });
+    }
+
+    // Cannot cancel confirmed orders — cancel individual tickets instead
+    const cancellableStates = ['PENDING_PAYMENT', 'PENDING_VERIFICATION', 'REJECTED', 'EXPIRED'];
+    if (!cancellableStates.includes(order.status)) {
+      return reply.status(409).send({
+        code: 'ORDER_NOT_CANCELLABLE',
+        error: `Order status is "${order.status}" — cannot cancel. Only PENDING_PAYMENT, PENDING_VERIFICATION, REJECTED, or EXPIRED orders can be cancelled.`,
+      });
+    }
+
+    // Release capacity and mark order as CANCELLED in a transaction
+    const released = await prisma.$transaction(async (tx) => {
+      const rel = await releaseOrderCapacity(order.id);
+      await tx.order.update({
+        where: { id: order.id },
+        data: { status: 'CANCELLED' },
+      });
+      return rel;
+    });
+
+    await writeAuditLog('ORDER_CANCELLED', 'Order', order.id, {
+      actorId: adminId,
+      actorRole: 'ADMIN',
+      eventId: order.eventId,
+      ipAddress: request.ip,
+      userAgent: request.headers['user-agent'],
+      metadata: {
+        orderNumber: order.orderNumber,
+        previousStatus: order.status,
+        capacityReleased: released,
+      },
+    });
+
+    return reply.send({
+      success: true,
+      message: `Order ${order.orderNumber} has been cancelled. Capacity released.`,
+      order: {
+        orderNumber: order.orderNumber,
+        previousStatus: order.status,
+        status: 'CANCELLED',
+        capacityReleased: released.length,
       },
     });
   }

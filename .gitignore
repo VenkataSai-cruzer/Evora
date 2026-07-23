@@ -53,6 +53,9 @@ uploads/
 *.log
 npm-debug.log*
 
+# Reference / credentials
+REFERENCE-LOGINS.md
+
 # Misc
 .cache/
 nul

@@ -1,6 +1,13 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { prisma } from '../../infrastructure/database/prisma.js';
-import { autoConfirmFreeOrder } from './order-finalization.service.js';
+
+/**
+ * Calculate the order total from the server-side ticket type price.
+ * Never trust a client-provided total.
+ */
+function calculateTotal(price: number, quantity: number): number {
+  return price * quantity;
+}
 
 export class OrderController {
   async create(request: FastifyRequest, reply: FastifyReply) {
@@ -39,12 +46,21 @@ export class OrderController {
       });
     }
 
-    // ── Determine payment method based on price ────────────
-    const isFree = ticketType.price === 0;
-    const paymentMethod = isFree ? 'FREE' : 'BANK_TRANSFER';
+    // ── Reject zero/negative price tickets ─────────────────
+    // Evora does not offer public free bookings.
+    // Only BANK_TRANSFER (paid) and COMPLIMENTARY (admin-issued) are supported.
+    if (ticketType.price <= 0) {
+      return reply.status(400).send({
+        code: 'INVALID_PAID_TICKET_PRICE',
+        error: 'This ticket is not available for public paid booking.',
+      });
+    }
+
+    // Calculate trusted total from server-side values
+    const total = calculateTotal(ticketType.price, body.quantity);
 
     // Transactional capacity check + order creation
-    const result = await prisma.$transaction(async (tx) => {
+    const order = await prisma.$transaction(async (tx) => {
       const currentType = await tx.ticketType.findUnique({
         where: { id: ticketType.id },
       });
@@ -61,15 +77,13 @@ export class OrderController {
           orderNumber,
           eventId: body.eventId,
           userId,
-          status: isFree ? 'CONFIRMED' : 'PENDING_PAYMENT',
-          paymentMethod,
-          paymentProvider: isFree ? 'free' : null,
-          subtotal: 0,
+          status: 'PENDING_PAYMENT',
+          paymentMethod: 'BANK_TRANSFER',
+          subtotal: total,
           fees: 0,
-          total: 0,
+          total,
           currency: ticketType.currency,
-          paidAt: isFree ? new Date() : null,
-          expiresAt: isFree ? null : new Date(Date.now() + 30 * 60 * 1000),
+          expiresAt: new Date(Date.now() + 30 * 60 * 1000),
           attendees: {
             create: body.attendees.map((a) => ({
               ticketTypeId: ticketType.id,
@@ -94,33 +108,12 @@ export class OrderController {
         data: { soldCount: { increment: body.quantity } },
       });
 
-      return { order: newOrder, isFree };
+      return newOrder;
     });
 
-    // ── For FREE orders: auto-generate tickets immediately ──
-    if (result.isFree) {
-      await autoConfirmFreeOrder({
-        orderId: result.order.id,
-        orderNumber: result.order.orderNumber,
-        eventId: body.eventId,
-        userId,
-        ticketNumberPrefix: event.ticketNumberPrefix || '',
-        attendees: result.order.attendees.map((a) => ({
-          id: a.id,
-          attendeeName: a.attendeeName,
-          attendeeEmail: a.attendeeEmail,
-          attendeePhone: a.attendeePhone,
-          ticketType: a.ticketType,
-        })),
-        approvedById: userId,
-        approvalNote: 'Free event booking auto-confirmed',
-      });
-    }
-
     return reply.status(201).send({
-      order: result.order,
-      paymentMethod,
-      autoConfirmed: result.isFree,
+      order,
+      paymentMethod: 'BANK_TRANSFER',
     });
   }
 

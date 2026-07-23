@@ -13,8 +13,8 @@ function UserSidebar() {
   return (
     <aside className="hidden w-64 flex-col border-r border-[var(--color-border)] bg-surface lg:flex">
       <div className="border-b border-[var(--color-border)] p-4">
-        <Link href="/my-event" className="text-sm font-semibold text-white">✦ 7 NOTES</Link>
-        <p className="mt-0.5 text-xs text-text-muted">My Event</p>
+        <Link href="/dashboard" className="text-sm font-semibold text-white">✦ Evora</Link>
+        <p className="mt-0.5 text-xs text-text-muted">My Account</p>
       </div>
       <nav className="flex-1 space-y-1 p-3">
         {USER_NAV.map((item) => (

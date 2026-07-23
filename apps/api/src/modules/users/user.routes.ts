@@ -10,6 +10,11 @@ export async function userRoutes(app: FastifyInstance) {
     handler: controller.getProfile.bind(controller),
   });
 
+  app.get('/me/overview', {
+    preHandler: [requireAuth],
+    handler: controller.getOverview.bind(controller),
+  });
+
   app.get('/me/dashboard', {
     preHandler: [requireAuth],
     handler: controller.getDashboard.bind(controller),

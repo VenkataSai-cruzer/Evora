@@ -20,6 +20,70 @@ export class UserController {
     return { user };
   }
 
+  /**
+   * GET /users/me/overview
+   * Attendee overview dashboard — returns summary stats, action items, and upcoming bookings.
+   * Uses the user's own orders (not public events) to determine state.
+   */
+  async getOverview(request: FastifyRequest, _reply: FastifyReply) {
+    const userId = request.user!.id;
+    const now = new Date();
+
+    const [orders, tickets] = await Promise.all([
+      prisma.order.findMany({
+        where: { userId },
+        include: {
+          event: { select: { id: true, title: true, slug: true, startAt: true, endAt: true, venueName: true, posterObjectKey: true } },
+          attendees: { select: { id: true, attendeeName: true, attendeeEmail: true } },
+          paymentProof: {
+            select: { id: true, status: true, utrNumber: true, submittedAt: true, reviewedAt: true, rejectionReason: true },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+      }),
+      prisma.ticket.findMany({
+        where: { userId, status: { not: 'CANCELLED' } },
+        include: {
+          event: { select: { title: true, slug: true, startAt: true, venueName: true } },
+          ticketType: { select: { name: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+    ]);
+
+    // Compute summary
+    const summary = {
+      upcomingBookings: orders.filter((o) => o.status === 'CONFIRMED' && o.event?.startAt && new Date(o.event.startAt) > now).length,
+      actionRequired: orders.filter((o) => o.status === 'PENDING_PAYMENT' || o.status === 'REJECTED').length,
+      availableTickets: tickets.filter((t) => t.status === 'CONFIRMED').length,
+      pastEvents: orders.filter((o) => o.event?.startAt && new Date(o.event.startAt) <= now).length,
+    };
+
+    // Action items — bookings needing attendee action
+    const actions = orders
+      .filter((o) => o.status === 'PENDING_PAYMENT' || o.status === 'REJECTED' || o.status === 'PENDING_VERIFICATION')
+      .map((o) => ({
+        orderNumber: o.orderNumber,
+        eventName: o.event?.title || 'Event',
+        status: o.status,
+        action: o.status === 'PENDING_PAYMENT' ? 'CONTINUE_PAYMENT' as const
+              : o.status === 'REJECTED' ? 'RESUBMIT_PROOF' as const
+              : 'UNDER_REVIEW' as const,
+        expiresAt: o.expiresAt?.toISOString() || null,
+      }));
+
+    // Upcoming confirmed bookings
+    const upcomingBookings = orders.filter((o) => o.status === 'CONFIRMED' && o.event?.startAt && new Date(o.event.startAt) > now);
+
+    return {
+      summary,
+      actions,
+      upcomingBookings,
+      totalOrders: orders.length,
+    };
+  }
+
   async getDashboard(request: FastifyRequest, _reply: FastifyReply) {
     const userId = request.user!.id;
     const now = new Date();
@@ -60,11 +124,9 @@ export class UserController {
       }),
     ]);
 
-    // Split events into upcoming and past
     const upcomingEvents = allEvents.filter((e) => new Date(e.startAt) > now);
     const pastEvents = allEvents.filter((e) => new Date(e.startAt) <= now);
 
-    // Build timeline for each order
     const ordersWithTimeline = orders.map((order) => {
       const timeline: Array<{ event: string; status: string; timestamp: string }> = [
         { event: 'Order Created', status: 'completed', timestamp: order.createdAt.toISOString() },
@@ -79,7 +141,7 @@ export class UserController {
       if (order.paymentProof?.reviewedAt) {
         timeline.push({
           event: order.paymentProof.status === 'APPROVED' ? 'Payment Approved' : 'Payment Reviewed',
-          status: order.paymentProof.status === 'APPROVED' ? 'completed' : 'completed',
+          status: 'completed',
           timestamp: order.paymentProof.reviewedAt.toISOString(),
         });
       }
@@ -91,25 +153,15 @@ export class UserController {
         });
       }
       if (order.status === 'CONFIRMED') {
-        timeline.push({
-          event: 'Tickets Issued',
-          status: 'completed',
-          timestamp: order.updatedAt.toISOString(),
-        });
+        timeline.push({ event: 'Tickets Issued', status: 'completed', timestamp: order.updatedAt.toISOString() });
       }
       if (order.status === 'REJECTED') {
-        timeline.push({
-          event: 'Resubmission Available',
-          status: 'pending',
-          timestamp: order.updatedAt.toISOString(),
-        });
+        timeline.push({ event: 'Resubmission Available', status: 'pending', timestamp: order.updatedAt.toISOString() });
       }
-      // Sort by timestamp, remove duplicates
       timeline.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
       return { ...order, timeline };
     });
 
-    // Compute stats
     const stats = {
       pendingPayments: orders.filter((o) => o.status === 'PENDING_PAYMENT' || o.status === 'PENDING_VERIFICATION').length,
       approvedPayments: orders.filter((o) => o.status === 'CONFIRMED').length,
@@ -118,13 +170,7 @@ export class UserController {
       totalOrders: orders.length,
     };
 
-    return {
-      orders: ordersWithTimeline,
-      tickets,
-      upcomingEvents,
-      pastEvents,
-      stats,
-    };
+    return { orders: ordersWithTimeline, tickets, upcomingEvents, pastEvents, stats };
   }
 
   async getOrders(request: FastifyRequest, _reply: FastifyReply) {
@@ -133,10 +179,10 @@ export class UserController {
     const orders = await prisma.order.findMany({
       where: { userId },
       include: {
-        event: { select: { id: true, title: true, slug: true, startAt: true, endAt: true, venueName: true } },
+        event: { select: { id: true, title: true, slug: true, startAt: true, endAt: true, venueName: true, posterObjectKey: true } },
         attendees: true,
         tickets: { select: { id: true, ticketNumber: true, status: true } },
-        paymentProof: { select: { id: true, status: true, utrNumber: true, submittedAt: true, rejectionReason: true } },
+        paymentProof: { select: { id: true, status: true, utrNumber: true, amount: true, submittedAt: true, rejectionReason: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -150,9 +196,7 @@ export class UserController {
     const tickets = await prisma.ticket.findMany({
       where: { userId },
       include: {
-        event: {
-          select: { title: true, slug: true, startAt: true, venueName: true, posterObjectKey: true },
-        },
+        event: { select: { title: true, slug: true, startAt: true, venueName: true, posterObjectKey: true } },
         ticketType: { select: { name: true, price: true } },
         checkIn: { select: { checkedInAt: true } },
         order: { select: { orderNumber: true, status: true } },
@@ -180,11 +224,7 @@ export class UserController {
     });
 
     if (!order) return reply.status(404).send({ error: 'Order not found' });
-
-    // Only return if the order belongs to the requesting user
-    if (order.userId !== userId) {
-      return reply.status(403).send({ error: 'Access denied' });
-    }
+    if (order.userId !== userId) return reply.status(403).send({ error: 'Access denied' });
 
     return { order };
   }
@@ -192,27 +232,20 @@ export class UserController {
   async getPayments(request: FastifyRequest, _reply: FastifyReply) {
     const userId = request.user!.id;
 
-    const payments = await prisma.payment.findMany({
-      where: { order: { userId } },
-      include: {
-        order: {
-          select: { orderNumber: true, status: true, total: true, eventId: true },
-        },
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 20,
-    });
-
-    const proofPayments = await prisma.paymentProof.findMany({
-      where: { submittedById: userId },
-      include: {
-        order: {
-          select: { orderNumber: true, status: true, total: true, eventId: true },
-        },
-      },
-      orderBy: { submittedAt: 'desc' },
-      take: 20,
-    });
+    const [payments, proofPayments] = await Promise.all([
+      prisma.payment.findMany({
+        where: { order: { userId } },
+        include: { order: { select: { orderNumber: true, status: true, total: true, eventId: true } } },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+      }),
+      prisma.paymentProof.findMany({
+        where: { submittedById: userId },
+        include: { order: { select: { orderNumber: true, status: true, total: true, eventId: true } } },
+        orderBy: { submittedAt: 'desc' },
+        take: 20,
+      }),
+    ]);
 
     return { payments, proofPayments };
   }

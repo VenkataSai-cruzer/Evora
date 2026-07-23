@@ -1,3 +1,14 @@
+# ──────────────────────────────────────────────────────────
+#  Evora Frontend Dockerfile (Render / standalone)
+# ──────────────────────────────────────────────────────────
+# This file was the original Dockerfile.
+# It was renamed to DOCKERFILE_RENDER so Railway doesn't
+# auto-detect it (Railway uses Build Commands instead).
+#
+# Keep this file until Render is fully decommissioned.
+# Copy back to "Dockerfile" if rolling back to Render.
+# ──────────────────────────────────────────────────────────
+
 FROM node:20-alpine AS base
 
 # Install dependencies only when needed

@@ -33,6 +33,8 @@ export async function buildApp() {
           ? { target: 'pino-pretty', options: { colorize: true } }
           : undefined,
     },
+    // Trust proxy — required when behind Railway load balancer
+    trustProxy: true,
   });
 
   // ── Plugins ──────────────────────────────────────────
@@ -94,7 +96,7 @@ export async function buildApp() {
           "style-src 'self' 'unsafe-inline'",
           "img-src 'self' data: blob:",
           "font-src 'self' data:",
-          "connect-src 'self' https://*.7notes.workers.dev",
+          "connect-src 'self' https://*.7notes.workers.dev https://*.railway.app",
           "frame-ancestors 'none'",
         ].join('; '),
       );

@@ -5,96 +5,52 @@ import { writeAuditLog } from '../../infrastructure/audit/audit.service.js';
 
 export type ApprovalSource = 'MANUAL_ADMIN' | 'SYSTEM';
 
+// ── Capacity Management ─────────────────────────────────────
 
-// ── Free-order auto-confirm ──────────────────────────────────
-
-interface FreeConfirmInput {
-  orderId: string;
-  orderNumber: string;
-  eventId: string;
-  userId: string;
-  ticketNumberPrefix: string;
-  attendees: Array<{
-    id: string;
-    attendeeName: string;
-    attendeeEmail: string | null;
-    attendeePhone: string | null;
-    ticketType: {
-      id: string;
-      price: number;
-    };
-  }>;
-  approvedById?: string;
-  approvalNote?: string;
-}
-
-interface FreeConfirmResult {
-  ticketsCreated: number;
-  ticketNumbers: string[];
+interface CapacityReleaseItem {
+  ticketTypeId: string;
+  quantity: number;
 }
 
 /**
- * Generate tickets immediately for a FREE order.
- * Called during order creation when total = 0.
- * Does NOT create payment records, does NOT require proof.
+ * Release reserved capacity for a cancelled/expired order.
+ * Decrements soldCount on the associated ticket types.
+ * Safe to call multiple times — uses Math.max to prevent negative soldCount.
  */
-export async function autoConfirmFreeOrder(
-  input: FreeConfirmInput,
-): Promise<FreeConfirmResult> {
-  const { orderId, orderNumber, eventId, userId, ticketNumberPrefix, attendees, approvedById, approvalNote } = input;
-
-  const generatedTickets: { ticketNumber: string }[] = [];
-
-  for (let i = 0; i < attendees.length; i++) {
-    const attendee = attendees[i];
-    const { token, tokenHash } = generateQrToken();
-    const prefix = ticketNumberPrefix || '7N-';
-    const ticketNumber = `${prefix}FREE-${orderNumber}-${String(i + 1).padStart(2, '0')}`;
-
-    await prisma.ticket.create({
-      data: {
-        ticketNumber,
-        eventId,
-        userId,
-        orderId,
-        orderAttendeeId: attendee.id,
-        ticketTypeId: attendee.ticketType.id,
-        attendeeName: attendee.attendeeName,
-        attendeeEmail: attendee.attendeeEmail || '',
-        attendeePhone: attendee.attendeePhone || '',
-        ticketCategory: 'PAID',
-        source: 'SYSTEM',
-        visibility: 'STANDARD',
-        issuedById: approvedById || userId,
-        issuedByRole: 'SYSTEM',
-        pricePaid: 0,
-        status: 'CONFIRMED',
-        qrToken: token,
-        qrTokenHash: tokenHash,
-        templateVersion: 1,
-        renderingStatus: 'PENDING',
-      },
-    });
-
-    generatedTickets.push({ ticketNumber });
-  }
-
-  await writeAuditLog('PAYMENT_APPROVED', 'Order', orderId, {
-    actorId: approvedById || userId,
-    actorRole: 'SYSTEM',
-    eventId,
-    metadata: {
-      orderNumber,
-      ticketsCreated: generatedTickets.length,
-      note: approvalNote || 'Free event auto-confirm',
-      paymentMethod: 'FREE',
+export async function releaseOrderCapacity(orderId: string): Promise<CapacityReleaseItem[]> {
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    include: {
+      attendees: { select: { ticketTypeId: true } },
     },
   });
 
-  return {
-    ticketsCreated: generatedTickets.length,
-    ticketNumbers: generatedTickets.map((t) => t.ticketNumber),
-  };
+  if (!order) return [];
+
+  // Group attendees by ticket type to count how many per type
+  const typeCounts = new Map<string, number>();
+  for (const attendee of order.attendees) {
+    const count = typeCounts.get(attendee.ticketTypeId) || 0;
+    typeCounts.set(attendee.ticketTypeId, count + 1);
+  }
+
+  const released: CapacityReleaseItem[] = [];
+
+  for (const [ticketTypeId, quantity] of typeCounts) {
+    const tt = await prisma.ticketType.findUnique({ where: { id: ticketTypeId } });
+    if (!tt) continue;
+
+    // Decrement soldCount, floor at 0
+    const newSoldCount = Math.max(0, tt.soldCount - quantity);
+    await prisma.ticketType.update({
+      where: { id: ticketTypeId },
+      data: { soldCount: newSoldCount },
+    });
+
+    released.push({ ticketTypeId, quantity });
+  }
+
+  return released;
 }
 
 interface FinalizeResult {

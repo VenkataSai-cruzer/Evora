@@ -149,7 +149,7 @@ export function BookingForm({ event }: BookingFormProps) {
                 </div>
               </div>
               <span className="text-sm font-semibold text-primary">
-                {ticket.price === 0 ? 'Free' : `₹${(ticket.price / 100).toLocaleString()}`}
+                ₹{(ticket.price / 100).toLocaleString()}
               </span>
             </label>
           ))}

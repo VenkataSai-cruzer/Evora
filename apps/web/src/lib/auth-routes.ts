@@ -15,7 +15,7 @@ const ROLE_PORTALS: Record<UserRole, string[]> = {
   ADMIN: ['/admin', '/scanner', '/organizer', '/my-event', '/my-ticket', '/tickets', '/profile'],
   ORGANIZER: ['/organizer', '/my-event', '/my-ticket', '/profile'],
   SCANNER: ['/scanner', '/profile'],
-  ATTENDEE: ['/my-event', '/my-ticket', '/tickets', '/profile', '/payment-status', '/announcements'],
+  ATTENDEE: ['/dashboard', '/my-bookings', '/tickets', '/profile', '/announcements'],
 };
 
 /**
@@ -30,7 +30,7 @@ export function getDefaultRouteForRole(role: string): string {
     case 'SCANNER':
       return '/scanner';
     case 'ATTENDEE':
-      return '/my-event';
+      return '/dashboard';
     default:
       return '/';
   }

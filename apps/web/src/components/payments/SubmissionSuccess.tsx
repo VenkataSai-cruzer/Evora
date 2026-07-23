@@ -119,9 +119,9 @@ export function SubmissionSuccess({
             <span className="flex h-5 w-5 items-center justify-center rounded-full bg-success/10 text-success text-xs font-bold">3</span>
             <p className="text-xs text-text-secondary">
               {email ? (
-                <>Your ticket will be available in your dashboard and emailed to <span className="text-white">{email}</span></>
+                <>Your ticket will be available in your Bookings and emailed to <span className="text-white">{email}</span></>
               ) : (
-                'Your ticket will be available in your dashboard'
+                'Your ticket will be available in your Bookings'
               )}
             </p>
           </div>
@@ -141,10 +141,10 @@ export function SubmissionSuccess({
       {/* Actions */}
       <div className="border-t border-success/10 px-6 py-4 flex flex-col sm:flex-row gap-3">
         <Link
-          href="/my-event"
+          href="/my-bookings"
           className="flex-1 rounded-lg bg-primary py-2.5 text-center text-sm font-medium text-white hover:bg-primary-hover transition-colors"
         >
-          View My Dashboard
+          View Bookings
         </Link>
         <Link
           href={`/payment-status?order=${orderNumber}`}

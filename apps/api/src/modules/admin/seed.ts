@@ -114,7 +114,7 @@ export async function seedStagingData() {
   });
   results.push(`Published event: ${publishedEvent.title} (/${publishedEvent.slug})`);
 
-  // General Pass
+  // General Pass (Paid — ₹299)
   await prisma.ticketType.upsert({
     where: { id: 'seed-staging-ga' },
     update: {},
@@ -123,7 +123,7 @@ export async function seedStagingData() {
       eventId: publishedEvent.id,
       name: 'General Pass',
       description: 'Standard entry to the jamming session.',
-      price: 0,
+      price: 29900, // ₹299
       currency: 'INR',
       capacity: 80,
       soldCount: 0,
@@ -153,7 +153,7 @@ export async function seedStagingData() {
       saleEndAt: futureDate(13),
     },
   });
-  results.push(`  Ticket types: General Pass (Free), Couple Pass (₹499)`);
+  results.push(`  Ticket types: General Pass (₹299), Couple Pass (₹499)`);
 
   // FAQs
   await prisma.eventFAQ.upsert({
@@ -283,7 +283,7 @@ export async function seedStagingData() {
       eventId: pausedEvent.id,
       name: 'General Pass',
       description: 'Standard entry.',
-      price: 0,
+      price: 29900, // ₹299
       currency: 'INR',
       capacity: 50,
       soldCount: 0,
@@ -328,7 +328,7 @@ export async function seedStagingData() {
       eventId: soldOutEvent.id,
       name: 'General Pass',
       description: 'Sold out.',
-      price: 0,
+      price: 29900,
       currency: 'INR',
       capacity: 10,
       soldCount: 10,
