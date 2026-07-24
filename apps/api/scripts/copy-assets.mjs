@@ -15,15 +15,15 @@ const sourceDir = path.join(apiRoot, 'assets');
 const destDir = path.join(apiRoot, 'dist', 'assets');
 
 async function copyAssets() {
-  // Verify source asset exists
-  const ticketPng = path.join(sourceDir, 'Ticket.png');
+  // Verify font asset exists
+  const fontFile = path.join(sourceDir, 'fonts', 'Inter-Regular.ttf');
   try {
-    await access(ticketPng, constants.R_OK);
-    const stats = await stat(ticketPng);
-    console.log(`[copy-assets] Found source: ${ticketPng} (${stats.size} bytes)`);
+    await access(fontFile, constants.R_OK);
+    const stats = await stat(fontFile);
+    console.log(`[copy-assets] Found font: ${fontFile} (${stats.size} bytes)`);
   } catch {
-    console.error(`[copy-assets] ERROR: Source asset not found at ${ticketPng}`);
-    console.error('[copy-assets] HINT: Place Ticket.png in apps/api/assets/');
+    console.error(`[copy-assets] ERROR: Bundled font not found at ${fontFile}`);
+    console.error('[copy-assets] HINT: Place Inter-Regular.ttf in apps/api/assets/fonts/');
     process.exit(1);
   }
 
@@ -31,15 +31,15 @@ async function copyAssets() {
   await mkdir(destDir, { recursive: true });
   await cp(sourceDir, destDir, { recursive: true, force: true });
 
-  // Verify destination
-  const destTicket = path.join(destDir, 'Ticket.png');
+  // Verify destination font
+  const destFont = path.join(destDir, 'fonts', 'Inter-Regular.ttf');
   try {
-    await access(destTicket, constants.R_OK);
-    const stats = await stat(destTicket);
-    console.log(`[copy-assets] Copied to: ${destTicket} (${stats.size} bytes)`);
+    await access(destFont, constants.R_OK);
+    const stats = await stat(destFont);
+    console.log(`[copy-assets] Copied font to: ${destFont} (${stats.size} bytes)`);
     console.log('[copy-assets] ✅ Asset copy complete');
   } catch {
-    console.error(`[copy-assets] ERROR: Failed to verify copied asset at ${destTicket}`);
+    console.error(`[copy-assets] ERROR: Failed to verify copied font at ${destFont}`);
     process.exit(1);
   }
 }

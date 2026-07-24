@@ -1,6 +1,67 @@
 import sharp from 'sharp';
 import QRCode from 'qrcode';
 import { PDFDocument } from 'pdf-lib';
+import { readFileSync, existsSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+// ── Bundled Font ──────────────────────────────────────────
+// Inter-Regular.ttf (SIL Open Font License) is bundled in the API build
+// at dist/assets/fonts/Inter-Regular.ttf. It is loaded at startup and
+// embedded in the SVG via @font-face so no system font dependency exists.
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// Resolve the font path relative to this module's location
+// Runtime:   apps/api/dist/infrastructure/rendering/ticket.renderer.js
+// Font:      apps/api/dist/assets/fonts/Inter-Regular.ttf (copied from apps/api/assets/fonts/)
+// We go 3 levels up from dist/infrastructure/rendering/ to reach apps/api/
+const API_DIR = resolve(__dirname, '..', '..', '..');
+
+// Production: dist/assets/fonts/Inter-Regular.ttf (next to the built files)
+const DIST_FONT = resolve(API_DIR, 'dist', 'assets', 'fonts', 'Inter-Regular.ttf');
+// Development: assets/fonts/Inter-Regular.ttf (source, when running via tsx)
+const SRC_FONT = resolve(API_DIR, 'assets', 'fonts', 'Inter-Regular.ttf');
+
+const FONT_PATH_CANDIDATES = [DIST_FONT, SRC_FONT];
+
+let FONT_BASE64: string | null = null;
+
+function loadFont(): void {
+  for (const fp of FONT_PATH_CANDIDATES) {
+    if (existsSync(fp)) {
+      const fontBuffer = readFileSync(fp);
+      FONT_BASE64 = fontBuffer.toString('base64');
+      console.log(`[TicketRenderer] Loaded font: ${fp} (${fontBuffer.length} bytes)`);
+      return;
+    }
+  }
+  console.warn('[TicketRenderer] WARNING: Inter-Regular.ttf not found. Text will rely on system fonts which may render as boxes on Railway.');
+}
+
+loadFont();
+
+/**
+ * Generate an SVG @font-face style block with the bundled Inter font as base64.
+ */
+function fontFaceStyle(): string {
+  if (FONT_BASE64) {
+    return `@font-face {
+  font-family: 'Inter';
+  src: url(data:font/truetype;charset=utf-8;base64,${FONT_BASE64}) format('truetype');
+  font-weight: normal;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'Inter';
+  src: url(data:font/truetype;charset=utf-8;base64,${FONT_BASE64}) format('truetype');
+  font-weight: bold;
+  font-style: normal;
+}`;
+  }
+  return '';
+}
 
 export interface TicketRenderData {
   eventTitle: string;
@@ -132,6 +193,9 @@ function generateTicketSvg(data: TicketRenderData): string {
   lines.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">`);
 
   // ── Defs ────────────────────────────────────────────────
+  // The @font-face for Inter Regular is embedded as base64 data URI so
+  // no system font dependency exists — text renders correctly on Railway.
+  const fontStyle = fontFaceStyle();
   lines.push(`<defs>
     <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" style="stop-color:${BG};stop-opacity:1" />
@@ -149,16 +213,17 @@ function generateTicketSvg(data: TicketRenderData): string {
       <feDropShadow dx="0" dy="4" stdDeviation="12" flood-color="#000000" flood-opacity="0.5"/>
     </filter>
     <style>
-      .title { font-family: sans-serif; font-size: 38px; font-weight: 800; fill: ${TEXT_PRIMARY}; }
-      .subtitle { font-family: sans-serif; font-size: 18px; font-weight: 500; fill: ${TEXT_SECONDARY}; }
-      .label { font-family: sans-serif; font-size: 12px; font-weight: 600; fill: ${TEXT_MUTED}; letter-spacing: 2px; text-transform: uppercase; }
-      .name { font-family: sans-serif; font-size: 30px; font-weight: 700; fill: ${TEXT_PRIMARY}; }
-      .badge { font-family: sans-serif; font-size: 14px; font-weight: 700; fill: ${TEXT_PRIMARY}; letter-spacing: 1px; }
-      .info-label { font-family: sans-serif; font-size: 11px; font-weight: 600; fill: ${TEXT_MUTED}; letter-spacing: 1.5px; text-transform: uppercase; }
-      .info-value { font-family: monospace; font-size: 15px; font-weight: 600; fill: ${TEXT_PRIMARY}; }
-      .footer { font-family: sans-serif; font-size: 13px; font-weight: 500; fill: ${TEXT_MUTED}; letter-spacing: 2px; }
-      .valid { font-family: sans-serif; font-size: 14px; font-weight: 700; fill: #22C55E; }
-      .brand-text { font-family: sans-serif; font-size: 20px; font-weight: 800; fill: ${TEXT_PRIMARY}; letter-spacing: 4px; }
+      ${fontStyle}
+      .title { font-family: 'Inter', sans-serif; font-size: 38px; font-weight: 800; fill: ${TEXT_PRIMARY}; }
+      .subtitle { font-family: 'Inter', sans-serif; font-size: 18px; font-weight: 500; fill: ${TEXT_SECONDARY}; }
+      .label { font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 600; fill: ${TEXT_MUTED}; letter-spacing: 2px; text-transform: uppercase; }
+      .name { font-family: 'Inter', sans-serif; font-size: 30px; font-weight: 700; fill: ${TEXT_PRIMARY}; }
+      .badge { font-family: 'Inter', sans-serif; font-size: 14px; font-weight: 700; fill: ${TEXT_PRIMARY}; letter-spacing: 1px; }
+      .info-label { font-family: 'Inter', sans-serif; font-size: 11px; font-weight: 600; fill: ${TEXT_MUTED}; letter-spacing: 1.5px; text-transform: uppercase; }
+      .info-value { font-family: 'Inter', monospace; font-size: 15px; font-weight: 600; fill: ${TEXT_PRIMARY}; }
+      .footer { font-family: 'Inter', sans-serif; font-size: 13px; font-weight: 500; fill: ${TEXT_MUTED}; letter-spacing: 2px; }
+      .valid { font-family: 'Inter', sans-serif; font-size: 14px; font-weight: 700; fill: #22C55E; }
+      .brand-text { font-family: 'Inter', sans-serif; font-size: 20px; font-weight: 800; fill: ${TEXT_PRIMARY}; letter-spacing: 4px; }
     </style>
   </defs>`);
 

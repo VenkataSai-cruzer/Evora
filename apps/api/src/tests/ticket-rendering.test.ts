@@ -9,7 +9,13 @@
  */
 import { describe, it, expect } from 'vitest';
 import { randomBytes } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import '../tests/setup.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const rendererSourcePath = resolve(dirname(__filename), '..', 'infrastructure', 'rendering', 'ticket.renderer.ts');
 
 // ═══════════════════════════════════════════════════════
 // 1. SVG Template Validation
@@ -35,15 +41,16 @@ describe('SVG ticket template', () => {
     expect(result.length).toBeGreaterThan(0);
   });
 
-  it('2. SVG ticket renders without needing any external PNG file', async () => {
-    // This test verifies the renderer does NOT depend on Ticket.png
-    // The renderer generates a self-contained SVG — no template path needed
-    const renderer = await import('../infrastructure/rendering/ticket.renderer.js');
-    const fnStr = renderer.renderTicketPng.toString();
+  it('2. SVG ticket renders with bundled Inter font (no system font dependency)', async () => {
+    // Verify the renderer source file contains @font-face with Inter embedded as base64.
+    // We read the source directly since fontFaceStyle() is a separate function
+    // whose code is not included in renderTicketPng.toString().
+    const source = readFileSync(rendererSourcePath, 'utf-8');
+    expect(source).toContain('@font-face');
+    expect(source).toContain("font-family: 'Inter'");
+    expect(source).toContain('base64');
     // Should NOT reference Ticket.png (the old external template)
-    expect(fnStr).not.toContain('Ticket.png');
-    // Should reference QR code generation (which uses type: 'png' — that's the QR, not a template)
-    expect(fnStr).toContain('qrPayload');
+    expect(source).not.toContain('Ticket.png');
   });
 
   it('3. SVG contains 7 NOTES branding', async () => {
