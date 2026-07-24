@@ -189,7 +189,7 @@ export default function AdminSettingsPage() {
             </ol>
             <div className="mt-2 rounded-lg bg-surface p-3 font-mono text-xs text-text-secondary">
               <p><span className="text-success">GOOGLE_DRIVE_ENABLED</span>=true</p>
-              <p className="mt-1"><span className="text-warning">GOOGLE_SERVICE_ACCOUNT_KEY_JSON</span>='{{"type":"service_account",...}}'</p>
+              <p className="mt-1"><span className="text-warning">GOOGLE_SERVICE_ACCOUNT_KEY_JSON</span>='{&quot;type&quot;:&quot;service_account&quot;,...}'</p>
               <p className="mt-2 text-text-muted">— OR individual vars (recommended) —</p>
               <p className="mt-1"><span className="text-warning">GOOGLE_PROJECT_ID</span>=your-project-id</p>
               <p><span className="text-warning">GOOGLE_SERVICE_ACCOUNT_EMAIL</span>=your-sa@project.iam.gserviceaccount.com</p>
