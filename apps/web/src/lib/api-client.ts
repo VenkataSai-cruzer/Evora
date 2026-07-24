@@ -29,6 +29,27 @@ export class ApiClientError extends Error {
   }
 }
 
+// ── Session Token handling ───────────────────────────────
+// On desktop, the session is handled via HttpOnly cookies (sameSite: 'none').
+// On mobile (iOS Safari / Android Chrome), third-party cookies are blocked,
+// so we fall back to X-Session-Token header-based auth.
+//
+// On login, the backend returns a sessionToken in the response body.
+// The frontend stores it here and sends it as X-Session-Token on every request.
+// The backend middleware checks both cookie AND header.
+
+let sessionToken: string | null = null;
+
+/** Set the session token after successful login. */
+export function setSessionToken(token: string | null): void {
+  sessionToken = token;
+}
+
+/** Get the current session token (for auth provider). */
+export function getSessionToken(): string | null {
+  return sessionToken;
+}
+
 // ── CSRF Token handling ─────────────────────────────────
 // The session cookie is HttpOnly (not readable from JS), so we fetch
 // a CSRF token from the backend via GET /auth/csrf.
@@ -55,6 +76,8 @@ async function fetchCsrfToken(forceRefresh: boolean = false): Promise<string | n
     try {
       const res = await fetch(`${API_BASE_URL}/auth/csrf`, {
         credentials: 'include',
+        // Also send session token header in case cookies are blocked
+        headers: sessionToken ? { 'X-Session-Token': sessionToken } : undefined,
       });
       if (!res.ok) return null;
       const data = await res.json();
@@ -84,6 +107,12 @@ async function request<T>(
     'Content-Type': 'application/json',
     ...(options.headers as Record<string, string>),
   };
+
+  // Attach session token for mobile browsers that block third-party cookies.
+  // Desktop browsers continue using cookie-based auth.
+  if (sessionToken) {
+    headers['X-Session-Token'] = sessionToken;
+  }
 
   // Attach CSRF token for mutation requests
   if (['POST', 'PATCH', 'PUT', 'DELETE'].includes(options.method || 'GET')) {
@@ -191,6 +220,11 @@ export const api = {
       ...(options?.headers as Record<string, string>),
     };
 
+    // Send session token for mobile (header-based auth fallback)
+    if (sessionToken) {
+      headers['X-Session-Token'] = sessionToken;
+    }
+
     const res = await fetch(url, {
       ...options,
       method: options?.method || 'GET',
@@ -239,8 +273,13 @@ export async function getSession(): Promise<SessionUser | null> {
   }
 }
 
-export async function login(email: string, password: string): Promise<{ user: SessionUser; csrfToken: string }> {
-  return api.post('/auth/login', { email, password });
+export async function login(email: string, password: string): Promise<{ user: SessionUser; csrfToken: string; sessionToken?: string }> {
+  const result = await api.post<{ user: SessionUser; csrfToken: string; sessionToken?: string }>('/auth/login', { email, password });
+  // Store session token for mobile (header-based auth fallback)
+  if (result.sessionToken) {
+    setSessionToken(result.sessionToken);
+  }
+  return result;
 }
 
 export async function register(data: {
@@ -254,6 +293,7 @@ export async function register(data: {
 export async function logout(): Promise<void> {
   await api.post('/auth/logout');
   clearCsrfToken();
+  setSessionToken(null);
 }
 
 // ── Events (Public) ─────────────────────────────────────

@@ -20,6 +20,18 @@ export function generateCsrfToken(sessionToken: string): string {
  * The ONLY exception is the test-payment endpoint, which validates
  * its own safety requirements internally.
  */
+/**
+ * Resolve session token from cookie or X-Session-Token header.
+ * Must match the logic in authentication.ts.
+ */
+function resolveSessionToken(request: FastifyRequest): string | null {
+  const cookieToken = request.cookies?.session_token;
+  if (cookieToken) return cookieToken;
+  const headerToken = request.headers['x-session-token'] as string | undefined;
+  if (headerToken) return headerToken;
+  return null;
+}
+
 export async function csrfProtection(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -30,7 +42,7 @@ export async function csrfProtection(
   // The test-payment endpoint independently validates its own staging-only
   // feature gates (ENABLE_TEST_PAYMENT, NODE_ENV checks).
 
-  const sessionToken = request.cookies?.session_token;
+  const sessionToken = resolveSessionToken(request);
   if (!sessionToken) return; // No session = no CSRF needed
 
   const headerToken = request.headers['x-csrf-token'] as string;

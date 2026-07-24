@@ -104,6 +104,7 @@ export class AuthController {
         role: user.role,
       },
       csrfToken,
+      sessionToken, // Mobile fallback: frontend stores this and sends as X-Session-Token header
     });
   }
 
@@ -128,7 +129,8 @@ export class AuthController {
   }
 
   async csrf(request: FastifyRequest, _reply: FastifyReply) {
-    const sessionToken = request.cookies?.session_token;
+    // Check both cookie (desktop) and X-Session-Token header (mobile)
+    const sessionToken = request.cookies?.session_token || (request.headers['x-session-token'] as string | undefined);
     if (!sessionToken) {
       return { csrfToken: null };
     }

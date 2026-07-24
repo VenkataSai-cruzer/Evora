@@ -16,33 +16,63 @@ declare module 'fastify' {
 }
 
 /**
- * Require an authenticated session. Sets request.user if valid.
+ * Resolve the session token from cookie OR X-Session-Token header.
+ *
+ * Cookie-based auth works on desktop (third-party cookies allowed).
+ * Header-based auth (X-Session-Token) works on mobile (third-party cookies blocked).
  */
-export async function requireAuth(
-  request: FastifyRequest,
-  reply: FastifyReply,
-) {
-  const sessionToken = request.cookies?.session_token;
-  if (!sessionToken) {
-    return reply.status(401).send({ error: 'Authentication required' });
-  }
+function resolveSessionToken(request: FastifyRequest): string | null {
+  // 1. Try cookie first (desktop path)
+  const cookieToken = request.cookies?.session_token;
+  if (cookieToken) return cookieToken;
 
-  const tokenHash = hashToken(sessionToken);
+  // 2. Try X-Session-Token header (mobile path, see api-client.ts)
+  const headerToken = request.headers['x-session-token'] as string | undefined;
+  if (headerToken) return headerToken;
+
+  return null;
+}
+
+/**
+ * Look up a session by token hash and return the user if valid.
+ */
+async function resolveSession(token: string) {
+  const tokenHash = hashToken(token);
   const session = await prisma.session.findUnique({
     where: { tokenHash },
     include: { user: true },
   });
 
   if (!session || session.revokedAt || session.expiresAt < new Date()) {
-    return reply.status(401).send({ error: 'Invalid or expired session' });
+    return null;
   }
 
-  request.user = {
+  return {
     id: session.user.id,
     email: session.user.email,
     name: session.user.name,
     role: session.user.role,
   };
+}
+
+/**
+ * Require an authenticated session. Sets request.user if valid.
+ */
+export async function requireAuth(
+  request: FastifyRequest,
+  reply: FastifyReply,
+) {
+  const sessionToken = resolveSessionToken(request);
+  if (!sessionToken) {
+    return reply.status(401).send({ error: 'Authentication required' });
+  }
+
+  const user = await resolveSession(sessionToken);
+  if (!user) {
+    return reply.status(401).send({ error: 'Invalid or expired session' });
+  }
+
+  request.user = user;
 }
 
 /**
@@ -52,22 +82,12 @@ export async function optionalAuth(
   request: FastifyRequest,
   _reply: FastifyReply,
 ) {
-  const sessionToken = request.cookies?.session_token;
+  const sessionToken = resolveSessionToken(request);
   if (!sessionToken) return;
 
-  const tokenHash = hashToken(sessionToken);
-  const session = await prisma.session.findUnique({
-    where: { tokenHash },
-    include: { user: true },
-  });
-
-  if (session && !session.revokedAt && session.expiresAt > new Date()) {
-    request.user = {
-      id: session.user.id,
-      email: session.user.email,
-      name: session.user.name,
-      role: session.user.role,
-    };
+  const user = await resolveSession(sessionToken);
+  if (user) {
+    request.user = user;
   }
 }
 
