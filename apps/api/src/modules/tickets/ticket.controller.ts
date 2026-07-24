@@ -191,17 +191,29 @@ export class TicketController {
     }
 
     const venue = ticket.event.venueAddress
-      ? `${ticket.event.venueName}, ${ticket.event.venueAddress}`
-      : ticket.event.venueName;
+      ? `${ticket.event.venueName || ''}, ${ticket.event.venueAddress}`
+      : (ticket.event.venueName || 'Venue TBA');
+
+    const eventTitle = ticket.event.title || 'Event';
+    const eventDate = ticket.event.startAt
+      ? ticket.event.startAt.toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+      : 'Date TBA';
+    const eventTime = ticket.event.startAt
+      ? ticket.event.startAt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+      : 'Time TBA';
+    const ticketType = ticket.ticketType?.name || 'General Admission';
+    const attendeeName = ticket.attendeeName || 'Attendee';
+
+    request.log.info({ ticketNumber, eventTitle, attendeeName, ticketType, hasDate: !!ticket.event.startAt }, 'Rendering ticket PNG');
 
     try {
       const pngBuffer = await renderTicketPng({
-        eventTitle: ticket.event.title,
-        eventDate: ticket.event.startAt.toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }),
-        eventTime: ticket.event.startAt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+        eventTitle,
+        eventDate,
+        eventTime,
         venue,
-        attendeeName: ticket.attendeeName || 'Attendee',
-        ticketType: ticket.ticketType.name,
+        attendeeName,
+        ticketType,
         ticketNumber: ticket.ticketNumber,
         orderNumber: ticket.order?.orderNumber || '',
         qrPayload: ticket.qrToken,
@@ -313,17 +325,29 @@ export class TicketController {
     }
 
     const venue = ticket.event.venueAddress
-      ? `${ticket.event.venueName}, ${ticket.event.venueAddress}`
-      : ticket.event.venueName;
+      ? `${ticket.event.venueName || ''}, ${ticket.event.venueAddress}`
+      : (ticket.event.venueName || 'Venue TBA');
+
+    const eventTitle = ticket.event.title || 'Event';
+    const eventDate = ticket.event.startAt
+      ? ticket.event.startAt.toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+      : 'Date TBA';
+    const eventTime = ticket.event.startAt
+      ? ticket.event.startAt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+      : 'Time TBA';
+    const ticketType = ticket.ticketType?.name || 'General Admission';
+    const attendeeName = ticket.attendeeName || 'Attendee';
+
+    request.log.info({ ticketNumber, eventTitle, attendeeName, ticketType }, 'Rendering ticket PDF');
 
     try {
       const pdfBuffer = await renderTicketPdf({
-        eventTitle: ticket.event.title,
-        eventDate: ticket.event.startAt.toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }),
-        eventTime: ticket.event.startAt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+        eventTitle,
+        eventDate,
+        eventTime,
         venue,
-        attendeeName: ticket.attendeeName || 'Attendee',
-        ticketType: ticket.ticketType.name,
+        attendeeName,
+        ticketType,
         ticketNumber: ticket.ticketNumber,
         orderNumber: ticket.order?.orderNumber || '',
         qrPayload: ticket.qrToken,
