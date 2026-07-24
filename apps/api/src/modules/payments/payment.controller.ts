@@ -177,10 +177,11 @@ export class PaymentController {
         driveFileId = uploadResult.fileId;
         driveViewUrl = uploadResult.viewUrl;
       } catch (err) {
-        console.error('[GoogleDrive] Upload failed:', err);
-        return reply.status(502).send({
-          error: 'Screenshot upload failed. Please try again.',
-        });
+        // Drive failure is non-fatal — fall back to LOCAL storage so the user's
+        // payment proof submission still succeeds. The error is logged for
+        // admin awareness.
+        console.error('[GoogleDrive] Upload failed, falling back to LOCAL:', err);
+        storageProvider = 'LOCAL';
       }
     } else {
       // Dev mode: store locally noted
