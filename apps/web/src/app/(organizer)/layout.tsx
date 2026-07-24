@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { AuthGuard } from '@/components/AuthGuard';
 import { useAuth } from '@/lib/auth-provider';
+import { WorkspaceSwitcher } from '@/components/WorkspaceSwitcher';
 import { ORGANIZER_NAV, isActive } from '@/lib/navigation';
 
 function OrganizerSidebar() {
@@ -31,7 +32,8 @@ function OrganizerSidebar() {
           </Link>
         ))}
       </nav>
-      <div className="border-t border-[var(--color-border)] p-3">
+      <div className="border-t border-[var(--color-border)] p-3 space-y-1">
+        <WorkspaceSwitcher />
         <Link href="/" className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-text-muted hover:text-white">
           <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
@@ -74,7 +76,7 @@ function OrganizerMobileNav() {
 
 export default function OrganizerLayout({ children }: { children: React.ReactNode }) {
   return (
-    <AuthGuard requiredRole="ORGANIZER">
+    <AuthGuard requiredRole={['ORGANIZER', 'ADMIN']}>
       <div className="flex min-h-screen">
         <OrganizerSidebar />
         <main className="flex-1 lg:ml-64 p-4 sm:p-6 lg:p-8 pb-20 lg:pb-8">

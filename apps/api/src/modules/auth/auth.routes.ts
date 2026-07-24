@@ -48,13 +48,19 @@ export async function authRoutes(app: FastifyInstance) {
   });
 
   app.post('/logout', {
-    preHandler: [requireAuth],
+    // No requireAuth — allow logout even if the session is already expired/stale
     handler: controller.logout.bind(controller),
   });
 
   app.get('/session', {
     preHandler: [requireAuth],
-    handler: controller.session.bind(controller),
+    handler: controller.sessionHandler.bind(controller),
+  });
+
+  // Switch active workspace role (e.g. admin → organizer)
+  app.post('/active-role', {
+    preHandler: [requireAuth],
+    handler: controller.setActiveRole.bind(controller),
   });
 
   /**

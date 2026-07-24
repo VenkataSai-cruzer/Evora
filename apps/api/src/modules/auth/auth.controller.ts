@@ -7,6 +7,32 @@ import {
 } from '../../middleware/authentication.js';
 import { generateCsrfToken } from '../../middleware/csrf.js';
 
+/**
+ * Compute the roles this user is allowed to act as.
+ * An ADMIN can also act as ORGANIZER if they have any organizer assignments.
+ * Other users have only their base role.
+ */
+async function getAllowedRoles(userId: string, baseRole: string): Promise<string[]> {
+  const roles = [baseRole];
+
+  // ADMIN users with organizer assignments can switch to ORGANIZER workspace
+  if (baseRole === 'ADMIN') {
+    const assignmentCount = await prisma.organizerAssignment.count({
+      where: { organizerId: userId },
+    });
+    if (assignmentCount > 0) {
+      roles.push('ORGANIZER');
+    }
+  }
+
+  // ADMIN users can also access SCANNER
+  if (baseRole === 'ADMIN') {
+    roles.push('SCANNER');
+  }
+
+  return roles;
+}
+
 export class AuthController {
   async register(request: FastifyRequest, reply: FastifyReply) {
     const { name, email, password } = request.body as {
@@ -15,7 +41,6 @@ export class AuthController {
       password: string;
     };
 
-    // Check existing user
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
       return reply.status(409).send({ error: 'Email already registered' });
@@ -28,15 +53,16 @@ export class AuthController {
       select: { id: true, name: true, email: true, role: true },
     });
 
-    // Create session
     const sessionToken = generateSessionToken();
     await prisma.session.create({
       data: {
         userId: user.id,
         tokenHash: hashToken(sessionToken),
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       },
     });
+
+    const allowedRoles = await getAllowedRoles(user.id, user.role);
 
     const csrfToken = generateCsrfToken(sessionToken);
 
@@ -45,11 +71,11 @@ export class AuthController {
       secure: true,
       sameSite: 'none',
       path: '/',
-      maxAge: 7 * 24 * 60 * 60, // 7 days
+      maxAge: 7 * 24 * 60 * 60,
     });
 
     return reply.status(201).send({
-      user,
+      user: { ...user, allowedRoles },
       csrfToken,
     });
   }
@@ -70,13 +96,12 @@ export class AuthController {
       return reply.status(401).send({ error: 'Invalid credentials' });
     }
 
-    // Revoke all existing sessions for this user (session fixation protection)
+    // Session fixation protection: revoke all previous sessions
     await prisma.session.updateMany({
       where: { userId: user.id, revokedAt: null },
       data: { revokedAt: new Date() },
     });
 
-    // Create new session
     const sessionToken = generateSessionToken();
     await prisma.session.create({
       data: {
@@ -85,6 +110,8 @@ export class AuthController {
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       },
     });
+
+    const allowedRoles = await getAllowedRoles(user.id, user.role);
 
     const csrfToken = generateCsrfToken(sessionToken);
 
@@ -102,14 +129,15 @@ export class AuthController {
         name: user.name,
         email: user.email,
         role: user.role,
+        allowedRoles,
       },
       csrfToken,
-      sessionToken, // Mobile fallback: frontend stores this and sends as X-Session-Token header
+      sessionToken,
     });
   }
 
   async logout(request: FastifyRequest, reply: FastifyReply) {
-    const sessionToken = request.cookies?.session_token;
+    const sessionToken = request.cookies?.session_token || (request.headers['x-session-token'] as string | undefined);
     if (sessionToken) {
       const tokenHash = hashToken(sessionToken);
       await prisma.session.updateMany({
@@ -118,18 +146,28 @@ export class AuthController {
       });
     }
 
-    reply.clearCookie('session_token', { path: '/' });
+    reply.clearCookie('session_token', {
+      path: '/',
+      httpOnly: true,
+      secure: true,
+      sameSite: 'none',
+    });
     return reply.send({ message: 'Logged out' });
   }
 
-  async session(request: FastifyRequest, _reply: FastifyReply) {
+  async sessionHandler(request: FastifyRequest, _reply: FastifyReply) {
+    // request.user is set by requireAuth middleware
+    const user = request.user!;
+    const allowedRoles = await getAllowedRoles(user.id, user.role);
     return {
-      user: request.user,
+      user: {
+        ...user,
+        allowedRoles,
+      },
     };
   }
 
   async csrf(request: FastifyRequest, _reply: FastifyReply) {
-    // Check both cookie (desktop) and X-Session-Token header (mobile)
     const sessionToken = request.cookies?.session_token || (request.headers['x-session-token'] as string | undefined);
     if (!sessionToken) {
       return { csrfToken: null };
@@ -137,5 +175,37 @@ export class AuthController {
     return {
       csrfToken: generateCsrfToken(sessionToken),
     };
+  }
+
+  /**
+   * POST /auth/active-role
+   * Switch the active workspace role.
+   * The backend validates that the user actually has this role.
+   */
+  async setActiveRole(request: FastifyRequest, reply: FastifyReply) {
+    if (!request.user) {
+      return reply.status(401).send({ error: 'Authentication required' });
+    }
+
+    const { role } = request.body as { role: string };
+    const allowedRoles = await getAllowedRoles(request.user.id, request.user.role);
+
+    if (!allowedRoles.includes(role)) {
+      return reply.status(403).send({
+        error: 'You do not have this role.',
+        allowedRoles,
+      });
+    }
+
+    // Update the user's effective role in the session response
+    return reply.send({
+      user: {
+        id: request.user.id,
+        name: request.user.name,
+        email: request.user.email,
+        role, // Return the switched role as the active one
+        allowedRoles,
+      },
+    });
   }
 }
