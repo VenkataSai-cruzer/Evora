@@ -12,6 +12,8 @@ interface IssueTicketsOptions {
   orderId: string;
   issuedById: string;
   source: string;
+  /** Ticket category override — required because OrderAttendee does not store ticketCategory */
+  ticketCategory?: string;
 }
 
 interface IssueTicketsResult {
@@ -27,7 +29,7 @@ interface IssueTicketsResult {
  * Must run inside an existing Prisma transaction.
  */
 export async function issueTicketsForOrder(opts: IssueTicketsOptions): Promise<IssueTicketsResult> {
-  const { tx, orderId, issuedById, source } = opts;
+  const { tx, orderId, issuedById, source, ticketCategory } = opts;
 
   // Load order with attendee and ticket info
   const order = await tx.order.findUnique({
@@ -71,9 +73,9 @@ export async function issueTicketsForOrder(opts: IssueTicketsOptions): Promise<I
         attendeeName: attendee.attendeeName,
         attendeeEmail: attendee.attendeeEmail || '',
         attendeePhone: attendee.attendeePhone || '',
-        ticketCategory: attendee.ticketCategory || 'PAID',
+        ticketCategory: ticketCategory || 'PAID',
         source,
-        visibility: attendee.ticketCategory && attendee.ticketCategory !== 'PAID' ? 'ADMIN_ONLY' : 'STANDARD',
+        visibility: ticketCategory && ticketCategory !== 'PAID' ? 'ADMIN_ONLY' : 'STANDARD',
         issuedById,
         issuedByRole: source.includes('COMPLIMENTARY') ? 'ADMIN' : 'ADMIN',
         pricePaid: attendee.ticketType?.price || 0,

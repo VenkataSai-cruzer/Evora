@@ -1,7 +1,6 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { prisma } from '../../infrastructure/database/prisma.js';
 import { finalizeApprovedOrder, issueTicketsForOrder } from '../orders/order-finalization.service.js';
-import { generateQrToken } from '../../infrastructure/rendering/qr.service.js';
 import { writeAuditLog } from '../../infrastructure/audit/audit.service.js';
 import { GoogleDriveService } from '../../infrastructure/storage/google-drive.service.js';
 import {
@@ -623,42 +622,75 @@ export class AdminController {
       });
     }
 
-    const tickets = [];
-    for (let i = 0; i < qty; i++) {
-      const { token, tokenHash } = generateQrToken();
-      const seq = i + 1;
-      const prefix = event.ticketNumberPrefix || '7N-';
-      const ticketNumber = `${prefix}COMP-${Date.now()}-${String(seq).padStart(2, '0')}`;
-
-      const ticket = await prisma.ticket.create({
+    // Create Order + OrderAttendees + Tickets in a single transaction
+    // Uses the shared issueTicketsForOrder() service
+    const result = await prisma.$transaction(async (tx) => {
+      // 1. Create order with COMPLIMENTARY payment method
+      const order = await tx.order.create({
         data: {
-          ticketNumber, eventId, userId: attendeeUser.id,
-          ticketTypeId, attendeeName: body.attendeeName,
-          attendeeEmail: body.attendeeEmail.toLowerCase(),
-          attendeePhone: body.attendeePhone || '',
-          ticketCategory: body.ticketCategory,
-          source: 'ADMIN_MANUAL', visibility: 'ADMIN_ONLY',
-          issuedById: adminId, issuedByRole: 'ADMIN',
-          pricePaid: 0, status: 'CONFIRMED',
-          qrToken: token, qrTokenHash: tokenHash,
-          templateVersion: 1, renderingStatus: 'PENDING',
+          orderNumber: `COMP-${Date.now()}`,
+          eventId,
+          userId: attendeeUser.id,
+          status: 'CONFIRMED',
+          paymentMethod: 'COMPLIMENTARY',
+          subtotal: 0,
+          fees: 0,
+          total: 0,
+          paidAt: new Date(),
         },
       });
-      tickets.push(ticket);
-    }
 
-    await writeAuditLog('COMPLIMENTARY_TICKET_CREATED', 'Event', eventId, {
+      // 2. Create OrderAttendee records (schema-valid fields only)
+      for (let i = 0; i < qty; i++) {
+        await tx.orderAttendee.create({
+          data: {
+            orderId: order.id,
+            ticketTypeId,
+            attendeeName: body.attendeeName,
+            attendeeEmail: body.attendeeEmail.toLowerCase(),
+            attendeePhone: body.attendeePhone || '',
+          },
+        });
+      }
+
+      // 3. Create a Payment record for audit trail
+      await tx.payment.create({
+        data: {
+          orderId: order.id,
+          amount: 0,
+          method: 'complimentary',
+          status: 'SUCCEEDED',
+        },
+      });
+
+      // 4. Use the authoritative shared ticket-issuance service
+      const ticketResult = await issueTicketsForOrder({
+        tx,
+        orderId: order.id,
+        issuedById: adminId,
+        source: 'COMPLIMENTARY',
+        ticketCategory: body.ticketCategory,
+      });
+
+      return {
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        ...ticketResult,
+      };
+    });
+
+    await writeAuditLog('COMPLIMENTARY_TICKET_CREATED', 'Order', result.orderId, {
       actorId: adminId, actorRole: 'ADMIN', eventId,
       ipAddress: request.ip, userAgent: request.headers['user-agent'],
       metadata: { category: body.ticketCategory, reason: body.reason, internalNote: body.internalNote, quantity: qty, attendeeEmail: body.attendeeEmail },
     });
 
-    // Email notifications disabled until verified domain is set up.
-
     return reply.status(201).send({
       success: true,
-      tickets: tickets.map((t) => ({ ticketNumber: t.ticketNumber, ticketCategory: t.ticketCategory, status: t.status })),
-      count: tickets.length,
+      orderNumber: result.orderNumber,
+      ticketsCreated: result.ticketsCreated,
+      ticketNumbers: result.ticketNumbers,
+      count: qty,
     });
   }
 
