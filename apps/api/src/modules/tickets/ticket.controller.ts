@@ -1,6 +1,6 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { prisma } from '../../infrastructure/database/prisma.js';
-import { generateQrCodeDataUrl } from '../../infrastructure/rendering/qr.service.js';
+import { generateQrToken, generateQrCodeDataUrl } from '../../infrastructure/rendering/qr.service.js';
 import { renderTicketHtml } from '../../infrastructure/rendering/ticket.service.js';
 import { renderTicketPng, renderTicketPdf } from '../../infrastructure/rendering/ticket.renderer.js';
 
@@ -85,31 +85,7 @@ export class TicketController {
     return { ticket };
   }
 
-  async download(request: FastifyRequest, reply: FastifyReply) {
-    const { ticketNumber } = request.params as { ticketNumber: string };
-
-    const ticket = await prisma.ticket.findUnique({
-      where: { ticketNumber },
-    });
-
-    if (!ticket) {
-      return reply.status(404).send({ error: 'Ticket not found' });
-    }
-
-    if (ticket.userId !== request.user!.id && request.user!.role !== 'ADMIN') {
-      return reply.status(403).send({ error: 'Access denied' });
-    }
-
-    if (!ticket.pdfObjectKey && !ticket.pngObjectKey) {
-      return reply.status(404).send({ error: 'Ticket file not yet generated' });
-    }
-
-    return {
-      ticketNumber: ticket.ticketNumber,
-      pngKey: ticket.pngObjectKey,
-      pdfKey: ticket.pdfObjectKey,
-    };
-  }
+  // ── Dynamic PDF download is handled by `downloadPdf` below ──
 
   /**
    * GET /tickets/:ticketNumber/qr
@@ -241,6 +217,48 @@ export class TicketController {
    * GET /tickets/:ticketNumber/download
    * Downloads the ticket as a PDF.
    */
+  /**
+   * POST /tickets/migrate-qr
+   * Admin-only: Generate missing QR tokens for tickets created before QR generation was implemented.
+   * This ensures backward compatibility so ALL tickets can render with Ticket.png + QR.
+   *
+   * Only processes tickets where qrToken is null.
+   * Skips CANCELLED and EXPIRED tickets.
+   */
+  async migrateQrTokens(request: FastifyRequest, reply: FastifyReply) {
+    if (request.user!.role !== 'ADMIN') {
+      return reply.status(403).send({ error: 'Admin only' });
+    }
+
+    const tickets = await prisma.ticket.findMany({
+      where: {
+        qrToken: null,
+        status: { notIn: ['CANCELLED', 'EXPIRED'] },
+      },
+      select: { id: true, ticketNumber: true, status: true },
+    });
+
+    if (tickets.length === 0) {
+      return reply.send({ migrated: 0, message: 'No tickets need QR migration' });
+    }
+
+    let migrated = 0;
+    for (const ticket of tickets) {
+      const { token, tokenHash } = generateQrToken();
+      await prisma.ticket.update({
+        where: { id: ticket.id },
+        data: { qrToken: token, qrTokenHash: tokenHash },
+      });
+      migrated++;
+    }
+
+    return reply.send({
+      migrated,
+      message: `Generated QR tokens for ${migrated} ticket(s)`,
+      tickets: tickets.map((t) => t.ticketNumber),
+    });
+  }
+
   async downloadPdf(request: FastifyRequest, reply: FastifyReply) {
     const { ticketNumber } = request.params as { ticketNumber: string };
 

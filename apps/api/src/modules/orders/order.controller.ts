@@ -1,5 +1,6 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { prisma } from '../../infrastructure/database/prisma.js';
+import { writeAuditLog } from '../../infrastructure/audit/audit.service.js';
 
 /**
  * Calculate the order total from the server-side ticket type price.
@@ -8,6 +9,23 @@ import { prisma } from '../../infrastructure/database/prisma.js';
 function calculateTotal(price: number, quantity: number): number {
   return price * quantity;
 }
+
+/**
+ * Normalize a phone number to E.164 format.
+ * Accepts: +911234567890, 01234567890, 1234567890 (Indian), or any +<country><number>
+ */
+function normalizePhone(input: string): string {
+  const cleaned = input.replace(/[\s\-\(\)]/g, '');
+  if (cleaned.startsWith('+')) return cleaned;
+  if (cleaned.startsWith('0')) return `+91${cleaned.slice(1)}`;
+  return `+91${cleaned}`;
+}
+
+/**
+ * Validate E.164 phone format.
+ * Must be + followed by country code (1-3 digits) and subscriber number (6-14 digits).
+ */
+const E164_REGEX = /^\+\d{7,15}$/;
 
 export class OrderController {
   async create(request: FastifyRequest, reply: FastifyReply) {
@@ -46,14 +64,28 @@ export class OrderController {
       });
     }
 
-    // ── Reject zero/negative price tickets ─────────────────
-    // Evora does not offer public free bookings.
-    // Only BANK_TRANSFER (paid) and COMPLIMENTARY (admin-issued) are supported.
+    // Reject zero/negative price tickets
     if (ticketType.price <= 0) {
       return reply.status(400).send({
         code: 'INVALID_PAID_TICKET_PRICE',
         error: 'This ticket is not available for public paid booking.',
       });
+    }
+
+    // Validate phone numbers: mandatory, E.164 format
+    for (let i = 0; i < body.attendees.length; i++) {
+      const rawPhone = (body.attendees[i].phone || '').trim();
+      if (!rawPhone) {
+        return reply.status(400).send({ error: `Attendee ${i + 1} phone number is required` });
+      }
+
+      const normalized = normalizePhone(rawPhone);
+      if (!E164_REGEX.test(normalized)) {
+        return reply.status(400).send({
+          error: `Attendee ${i + 1} phone must be a valid international number in E.164 format (e.g. +919876543210)`,
+        });
+      }
+      body.attendees[i].phone = normalized;
     }
 
     // Calculate trusted total from server-side values
@@ -109,6 +141,19 @@ export class OrderController {
       });
 
       return newOrder;
+    });
+
+    await writeAuditLog('ORDER_CREATED', 'Order', order.id, {
+      actorId: userId,
+      ipAddress: request.ip,
+      userAgent: request.headers['user-agent'],
+      metadata: {
+        orderNumber: order.orderNumber,
+        eventId: body.eventId,
+        ticketTypeId: body.ticketTypeId,
+        quantity: body.quantity,
+        total,
+      },
     });
 
     return reply.status(201).send({

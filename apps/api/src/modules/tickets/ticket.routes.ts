@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { requireAuth } from '../../middleware/authentication.js';
+import { requireRole } from '../../middleware/authorization.js';
 import { TicketController } from './ticket.controller.js';
 
 export async function ticketRoutes(app: FastifyInstance) {
@@ -13,6 +14,12 @@ export async function ticketRoutes(app: FastifyInstance) {
   app.get('/:ticketNumber', {
     preHandler: [requireAuth],
     handler: controller.getByNumber.bind(controller),
+  });
+
+  // Admin: migrate missing QR tokens for backward compatibility
+  app.post('/migrate-qr', {
+    preHandler: [requireAuth, requireRole('ADMIN')],
+    handler: controller.migrateQrTokens.bind(controller),
   });
 
   app.get('/:ticketNumber/qr', {

@@ -505,36 +505,63 @@ export interface DashboardStats {
   cancelledEvents: number;
   recentEvents: AdminEventListItem[];
   totalOrders: number;
+  pendingOrders: number;
+  approvedOrders: number;
+  rejectedOrders: number;
+  totalTickets: number;
   contactMessages: number;
 }
 
 /**
- * Build dashboard stats from multiple API calls.
- * The backend doesn't have a single /admin/stats endpoint (yet),
- * so we compose from available endpoints.
+ * Build dashboard stats from the dedicated /admin/stats endpoint.
+ * Falls back to event-list aggregation if the endpoint is unavailable.
  */
 export async function getDashboardStats(_organizerId: string): Promise<DashboardStats> {
-  const { events: allEvents, total } = await listAdminEvents();
+  const [statsRes, eventsRes] = await Promise.allSettled([
+    api.get<{
+      events: { total: number; draft: number; published: number; completed: number; cancelled: number };
+      orders: { total: number; pendingPayment: number; pendingVerification: number; confirmed: number; rejected: number };
+      tickets: { total: number; checkedIn: number };
+      messages: { unread: number };
+    }>('/admin/stats'),
+    listAdminEvents({ limit: 5 }),
+  ]);
 
-  const recentEvents = allEvents.slice(0, 5);
+  const recentEvents = eventsRes.status === 'fulfilled' ? eventsRes.value.events : [];
 
-  const totalEvents = total;
-  const draftEvents = allEvents.filter((e) => e.status === 'DRAFT').length;
-  const activeEvents = allEvents.filter((e) => e.status === 'PUBLISHED' || e.status === 'SALES_OPEN').length;
-  const completedEvents = allEvents.filter((e) => e.status === 'COMPLETED').length;
-  const cancelledEvents = allEvents.filter((e) => e.status === 'CANCELLED').length;
-  const totalOrders = allEvents.reduce((sum, e) => sum + e._count.orders, 0);
-  const contactMessages = 0; // Contact messages API not yet implemented on backend
+  if (statsRes.status === 'fulfilled') {
+    const s = statsRes.value;
+    return {
+      totalEvents: s.events.total,
+      draftEvents: s.events.draft,
+      activeEvents: s.events.published,
+      completedEvents: s.events.completed,
+      cancelledEvents: s.events.cancelled,
+      recentEvents,
+      totalOrders: s.orders.total,
+      pendingOrders: s.orders.pendingPayment + s.orders.pendingVerification,
+      approvedOrders: s.orders.confirmed,
+      rejectedOrders: s.orders.rejected,
+      totalTickets: s.tickets.total,
+      contactMessages: s.messages.unread,
+    };
+  }
 
+  // Fallback: derive from events list (note: capped at 5 — use only if /admin/stats fails)
+  const allEvents = recentEvents;
   return {
-    totalEvents,
-    draftEvents,
-    activeEvents,
-    completedEvents,
-    cancelledEvents,
+    totalEvents: allEvents.length,
+    draftEvents: allEvents.filter((e) => e.status === 'DRAFT').length,
+    activeEvents: allEvents.filter((e) => e.status === 'PUBLISHED' || e.status === 'SALES_OPEN').length,
+    completedEvents: allEvents.filter((e) => e.status === 'COMPLETED').length,
+    cancelledEvents: allEvents.filter((e) => e.status === 'CANCELLED').length,
     recentEvents,
-    totalOrders,
-    contactMessages,
+    totalOrders: allEvents.reduce((sum, e) => sum + e._count.orders, 0),
+    pendingOrders: 0,
+    approvedOrders: 0,
+    rejectedOrders: 0,
+    totalTickets: allEvents.reduce((sum, e) => sum + e._count.tickets, 0),
+    contactMessages: 0,
   };
 }
 

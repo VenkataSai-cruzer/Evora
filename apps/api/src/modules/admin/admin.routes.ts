@@ -56,6 +56,12 @@ export async function adminRoutes(app: FastifyInstance) {
   app.post('/orders/:id/request-resubmission', controller.requestResubmission.bind(controller));
   app.post('/orders/:id/cancel', controller.cancelOrder.bind(controller));
 
+  // ── CSV Export ────────────────────────────────────────────
+  app.get('/orders/export.csv', controller.exportOrdersCsv.bind(controller));
+
+  // ── Dashboard Stats ──────────────────────────────────────
+  app.get('/stats', controller.getStats.bind(controller));
+
   // ── Users ────────────────────────────────────────────────
   app.get('/users', controller.listUsers.bind(controller));
   app.patch('/users/:userId/role', controller.updateUserRole.bind(controller));

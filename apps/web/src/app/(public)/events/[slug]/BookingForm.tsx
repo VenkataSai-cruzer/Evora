@@ -32,7 +32,6 @@ export function BookingForm({ event }: BookingFormProps) {
   const ticketType = event.ticketTypes?.find((t: any) => t.id === selectedTicket);
   const totalPrice = ticketType ? ticketType.price * quantity : 0;
 
-  /** Update attendee fields when quantity changes */
   function updateQuantity(newQty: number) {
     setQuantity(newQty);
     setAttendees((prev) => {
@@ -48,7 +47,6 @@ export function BookingForm({ event }: BookingFormProps) {
     });
   }
 
-  /** Update a specific attendee field */
   function updateAttendee(index: number, field: keyof AttendeeField, value: string) {
     setAttendees((prev) => {
       const updated = [...prev];
@@ -66,7 +64,6 @@ export function BookingForm({ event }: BookingFormProps) {
       return;
     }
 
-    // Validate all attendee names
     for (let i = 0; i < attendees.length; i++) {
       if (!attendees[i].name.trim()) {
         setError(`Attendee ${i + 1} name is required`);
@@ -118,11 +115,9 @@ export function BookingForm({ event }: BookingFormProps) {
       )}
 
       <form onSubmit={handleSubmit} className="mt-4 space-y-6">
-        {/* ── Step 1: Ticket Type ─────────────────────── */}
+        {/* Step 1: Ticket Type */}
         <div>
-          <label className="mb-2 block text-sm font-medium text-text-secondary">
-            1. Select Ticket Type
-          </label>
+          <label className="mb-2 block text-sm font-medium text-text-secondary">1. Select Ticket Type</label>
           {event.ticketTypes?.map((ticket: any) => (
             <label
               key={ticket.id}
@@ -143,24 +138,18 @@ export function BookingForm({ event }: BookingFormProps) {
                 />
                 <div>
                   <p className="text-sm font-medium text-white">{ticket.name}</p>
-                  {ticket.description && (
-                    <p className="text-xs text-text-muted">{ticket.description}</p>
-                  )}
+                  {ticket.description && <p className="text-xs text-text-muted">{ticket.description}</p>}
                 </div>
               </div>
-              <span className="text-sm font-semibold text-primary">
-                ₹{(ticket.price / 100).toLocaleString()}
-              </span>
+              <span className="text-sm font-semibold text-primary">₹{(ticket.price / 100).toLocaleString()}</span>
             </label>
           ))}
         </div>
 
-        {/* ── Step 2: Quantity ────────────────────────── */}
+        {/* Step 2: Quantity */}
         {ticketType && ticketType.maxPerOrder > 1 && (
           <div>
-            <label className="mb-2 block text-sm font-medium text-text-secondary">
-              2. Select Quantity
-            </label>
+            <label className="mb-2 block text-sm font-medium text-text-secondary">2. Select Quantity</label>
             <div className="flex items-center gap-3">
               <button
                 type="button"
@@ -183,21 +172,16 @@ export function BookingForm({ event }: BookingFormProps) {
           </div>
         )}
 
-        {/* ── Step 3: Attendee Details ────────────────── */}
+        {/* Step 3: Attendee Details */}
         {quantity > 0 && (
           <div>
-            <label className="mb-2 block text-sm font-medium text-text-secondary">
-              3. Attendee Details
-            </label>
+            <label className="mb-2 block text-sm font-medium text-text-secondary">3. Attendee Details</label>
             <p className="mb-3 text-xs text-text-muted">
               Enter details for each attendee. Each person will receive their own ticket with a unique QR code.
             </p>
             <div className="space-y-4">
               {attendees.map((attendee, index) => (
-                <div
-                  key={index}
-                  className="rounded-lg border border-[var(--color-border)] bg-surface-elevated p-4"
-                >
+                <div key={index} className="rounded-lg border border-[var(--color-border)] bg-surface-elevated p-4">
                   <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-text-muted">
                     Attendee {index + 1}
                   </p>
@@ -218,23 +202,30 @@ export function BookingForm({ event }: BookingFormProps) {
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
-                        <label className="mb-1 block text-xs text-text-secondary">Email</label>
+                        <label className="mb-1 block text-xs text-text-secondary">
+                          Email <span className="text-error">*</span>
+                        </label>
                         <input
                           type="email"
                           value={attendee.email}
                           onChange={(e) => updateAttendee(index, 'email', e.target.value)}
                           className="w-full rounded-lg border border-[var(--color-border)] bg-surface px-3 py-2.5 text-sm text-white placeholder:text-text-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                          placeholder="Email (optional)"
+                          placeholder="attendee@example.com"
+                          required
                         />
                       </div>
                       <div>
-                        <label className="mb-1 block text-xs text-text-secondary">Phone</label>
+                        <label className="mb-1 block text-xs text-text-secondary">
+                          Phone <span className="text-error">*</span>
+                        </label>
                         <input
                           type="tel"
                           value={attendee.phone}
                           onChange={(e) => updateAttendee(index, 'phone', e.target.value)}
                           className="w-full rounded-lg border border-[var(--color-border)] bg-surface px-3 py-2.5 text-sm text-white placeholder:text-text-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                          placeholder="Phone (optional)"
+                          placeholder="+919876543210"
+                          required
+                          title="Enter a valid phone number in E.164 format (e.g. +919876543210)"
                         />
                       </div>
                     </div>
@@ -245,7 +236,7 @@ export function BookingForm({ event }: BookingFormProps) {
           </div>
         )}
 
-        {/* ── Total ───────────────────────────────────── */}
+        {/* Total */}
         {ticketType && ticketType.price > 0 && (
           <div className="flex items-center justify-between border-t border-[var(--color-border)] pt-4">
             <span className="text-sm text-text-secondary">
@@ -257,7 +248,7 @@ export function BookingForm({ event }: BookingFormProps) {
           </div>
         )}
 
-        {/* ── Submit ──────────────────────────────────── */}
+        {/* Submit */}
         <button
           type="submit"
           disabled={loading}

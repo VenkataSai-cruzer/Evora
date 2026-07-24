@@ -58,6 +58,7 @@ interface FinalizeResult {
   orderNumber: string;
   ticketsCreated: number;
   ticketNumbers: string[];
+  eventId?: string;
 }
 
 /**
@@ -93,6 +94,7 @@ export async function finalizeApprovedOrder(
             take: 1,
           },
           tickets: { select: { id: true, ticketNumber: true } },
+          paymentProof: { select: { id: true, status: true } },
         },
       });
 
@@ -107,7 +109,7 @@ export async function finalizeApprovedOrder(
           orderNumber: order.orderNumber,
           ticketsCreated: 0,
           ticketNumbers: order.tickets.map((t) => t.ticketNumber),
-          alreadyConfirmed: true,
+          eventId: order.eventId,
         };
       }
 
@@ -117,6 +119,16 @@ export async function finalizeApprovedOrder(
         throw new Error(
           `Order status is "${order.status}" — cannot approve. Only PENDING_PAYMENT, PENDING_VERIFICATION, or REJECTED orders can be approved.`,
         );
+      }
+
+      // ── Atomically mark PaymentProof as APPROVED inside the transaction ──
+      // This prevents the race condition where PaymentProof = APPROVED but
+      // order finalization fails, leaving inconsistent state.
+      if (order.paymentProof && order.paymentProof.status === 'PENDING') {
+        await tx.paymentProof.update({
+          where: { id: order.paymentProof.id },
+          data: { status: 'APPROVED', reviewedAt: new Date(), reviewedById: approvedById },
+        });
       }
 
       // Verify capacity hasn't been over-sold (re-check in transaction)
@@ -152,6 +164,17 @@ export async function finalizeApprovedOrder(
           paidAt: new Date(),
         },
       });
+
+      // Guard: prevent duplicate ticket issuance — safety net inside transaction
+      if (order.tickets.length > 0) {
+        return {
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+          ticketsCreated: 0,
+          ticketNumbers: order.tickets.map((t) => t.ticketNumber),
+          eventId: order.eventId,
+        };
+      }
 
       // Generate tickets for each attendee
       const generatedTickets: { ticketNumber: string; id: string }[] = [];
@@ -194,8 +217,7 @@ export async function finalizeApprovedOrder(
         orderNumber: order.orderNumber,
         ticketsCreated: generatedTickets.length,
         ticketNumbers: generatedTickets.map((t) => t.ticketNumber),
-        alreadyConfirmed: false,
-        order,
+        eventId: order.eventId,
       };
     },
     {
@@ -214,7 +236,7 @@ export async function finalizeApprovedOrder(
   await writeAuditLog('PAYMENT_APPROVED', 'Order', orderId, {
     actorId: approvedById,
     actorRole: approver?.role,
-    eventId: (result as { order?: { eventId?: string } }).order?.eventId,
+    eventId: result.eventId,
     ipAddress,
     userAgent,
     metadata: {

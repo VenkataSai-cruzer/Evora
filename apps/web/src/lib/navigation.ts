@@ -27,7 +27,7 @@ export const USER_NAV: NavItem[] = [
 export const ADMIN_NAV: NavItem[] = [
   { label: 'Overview', href: '/admin' },
   { label: 'Events', href: '/admin/events' },
-  { label: 'Verifications', href: '/admin/verifications' },
+  { label: 'Orders', href: '/admin/orders' },
   { label: 'Complimentary', href: '/admin/complimentary' },
   { label: 'Check-in', href: '/admin/check-in' },
   { label: 'Users', href: '/admin/users' },

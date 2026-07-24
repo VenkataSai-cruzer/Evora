@@ -1,6 +1,6 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { prisma } from '../../infrastructure/database/prisma.js';
-import { finalizeApprovedOrder, releaseOrderCapacity } from '../orders/order-finalization.service.js';
+import { finalizeApprovedOrder } from '../orders/order-finalization.service.js';
 import { generateQrToken } from '../../infrastructure/rendering/qr.service.js';
 import { writeAuditLog } from '../../infrastructure/audit/audit.service.js';
 import { GoogleDriveService } from '../../infrastructure/storage/google-drive.service.js';
@@ -368,12 +368,8 @@ export class AdminController {
         });
       }
 
-      // Update PaymentProof status
-      await prisma.paymentProof.update({
-        where: { orderId: id },
-        data: { status: 'APPROVED', reviewedAt: new Date(), reviewedById: adminId },
-      });
-
+      // PaymentProof status is now updated INSIDE the finalization transaction
+      // to guarantee atomic consistency — no separate pre-update needed here.
       const result = await finalizeApprovedOrder(id, adminId, 'MANUAL_ADMIN', body?.overrideAmount, body?.note, request.ip, request.headers['user-agent']);
 
       return reply.send({
@@ -644,6 +640,69 @@ export class AdminController {
     return { user };
   }
 
+  // ── Dashboard Stats ────────────────────────────────────────
+
+  /**
+   * GET /admin/stats
+   * Real database aggregate counts for admin dashboard.
+   * Never derived from a capped list of events.
+   */
+  async getStats(_request: FastifyRequest, _reply: FastifyReply) {
+    const [
+      totalEvents,
+      draftEvents,
+      publishedEvents,
+      completedEvents,
+      cancelledEvents,
+      totalOrders,
+      pendingPaymentOrders,
+      pendingVerificationOrders,
+      confirmedOrders,
+      rejectedOrders,
+      totalTickets,
+      checkedInTickets,
+      unreadMessages,
+    ] = await Promise.all([
+      prisma.event.count(),
+      prisma.event.count({ where: { status: 'DRAFT' } }),
+      prisma.event.count({ where: { status: 'PUBLISHED' } }),
+      prisma.event.count({ where: { status: 'COMPLETED' } }),
+      prisma.event.count({ where: { status: 'CANCELLED' } }),
+      prisma.order.count(),
+      prisma.order.count({ where: { status: 'PENDING_PAYMENT' } }),
+      prisma.order.count({ where: { status: 'PENDING_VERIFICATION' } }),
+      prisma.order.count({ where: { status: 'CONFIRMED' } }),
+      prisma.order.count({ where: { status: 'REJECTED' } }),
+      prisma.ticket.count({ where: { status: { in: ['CONFIRMED', 'CHECKED_IN'] } } }),
+      prisma.ticket.count({ where: { status: 'CHECKED_IN' } }),
+      prisma.contactMessage.count({ where: { isRead: false } }),
+    ]);
+
+    return {
+      events: {
+        total: totalEvents,
+        draft: draftEvents,
+        published: publishedEvents,
+        completed: completedEvents,
+        cancelled: cancelledEvents,
+      },
+      orders: {
+        total: totalOrders,
+        pendingPayment: pendingPaymentOrders,
+        pendingVerification: pendingVerificationOrders,
+        confirmed: confirmedOrders,
+        rejected: rejectedOrders,
+      },
+      tickets: {
+        total: totalTickets,
+        checkedIn: checkedInTickets,
+      },
+      messages: {
+        unread: unreadMessages,
+      },
+    };
+  }
+
   // ── Audit Logs ────────────────────────────────────────────
 
   async listAuditLogs(request: FastifyRequest, _reply: FastifyReply) {
@@ -845,11 +904,34 @@ export class AdminController {
 
     // Release capacity and mark order as CANCELLED in a transaction
     const released = await prisma.$transaction(async (tx) => {
-      const rel = await releaseOrderCapacity(order.id);
+      // Group attendees by ticket type
+      const attendees = await tx.orderAttendee.findMany({
+        where: { orderId: order.id },
+        select: { ticketTypeId: true },
+      });
+
+      const typeCounts = new Map<string, number>();
+      for (const a of attendees) {
+        typeCounts.set(a.ticketTypeId, (typeCounts.get(a.ticketTypeId) || 0) + 1);
+      }
+
+      const rel: { ticketTypeId: string; quantity: number }[] = [];
+      for (const [ticketTypeId, quantity] of typeCounts) {
+        const tt = await tx.ticketType.findUnique({ where: { id: ticketTypeId } });
+        if (tt) {
+          await tx.ticketType.update({
+            where: { id: ticketTypeId },
+            data: { soldCount: Math.max(0, tt.soldCount - quantity) },
+          });
+          rel.push({ ticketTypeId, quantity });
+        }
+      }
+
       await tx.order.update({
         where: { id: order.id },
         data: { status: 'CANCELLED' },
       });
+
       return rel;
     });
 
@@ -876,6 +958,139 @@ export class AdminController {
         capacityReleased: released.length,
       },
     });
+  }
+
+  // ── CSV Export ────────────────────────────────────────────
+
+  /**
+   * GET /admin/orders/export.csv
+   * Stream a CSV export of orders matching the current filters.
+   * Supports same filters as listOrders.
+   * Prevents CSV injection by prefixing dangerous values.
+   */
+  async exportOrdersCsv(request: FastifyRequest, reply: FastifyReply) {
+    const query = request.query as {
+      status?: string;
+      eventId?: string;
+      paymentMethod?: string;
+      search?: string;
+    };
+
+    const where: Record<string, unknown> = {};
+    if (query.status) {
+      where.status = query.status;
+    }
+    if (query.eventId) where.eventId = query.eventId;
+
+    // Build the filter for the search query
+    if (query.search) {
+      where.OR = [
+        { orderNumber: { contains: query.search, mode: 'insensitive' } },
+        { user: { name: { contains: query.search, mode: 'insensitive' } } },
+        { user: { email: { contains: query.search, mode: 'insensitive' } } },
+        { user: { phone: { contains: query.search, mode: 'insensitive' } } },
+      ];
+    }
+
+    const orders = await prisma.order.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        user: { select: { name: true, email: true, phone: true } },
+        event: { select: { title: true, slug: true } },
+        attendees: {
+          include: { ticketType: { select: { name: true, price: true } } },
+        },
+        tickets: {
+          select: { ticketNumber: true, status: true },
+        },
+        paymentProof: {
+          select: {
+            utrNumber: true,
+            status: true,
+            rejectionReason: true,
+            reviewedBy: { select: { name: true } },
+            reviewedAt: true,
+          },
+        },
+      },
+    });
+
+    // CSV header
+    const headers = [
+      'Order Number',
+      'Created At',
+      'Event Name',
+      'Ticket Type',
+      'Quantity',
+      'Customer Name',
+      'Email',
+      'Phone Number',
+      'Payment Method',
+      'Payment Reference',
+      'Payment Status',
+      'Order Status',
+      'Verification Status',
+      'Reviewed By',
+      'Reviewed At',
+      'Rejection Reason',
+      'Ticket Numbers',
+      'Ticket Status',
+      'Checked In Count',
+      'Total Amount',
+    ];
+
+    // Escape a CSV value: wrap in quotes if contains comma, quote, or newline
+    // Prefix dangerous values (=, +, -, @) to prevent spreadsheet formula injection
+    const esc = (v: unknown): string => {
+      const s = String(v ?? '');
+      const dangerous = /^[=+\-@]/.test(s);
+      const needsQuotes = /[,"\n\r]/.test(s) || dangerous;
+      const escaped = s.replace(/"/g, '""');
+      const final = dangerous ? `'${escaped}` : escaped;
+      return needsQuotes ? `"${final}"` : final;
+    };
+
+    const headerLine = headers.map(esc).join(',') + '\n';
+
+    // Build CSV rows (stream manually by joining — manageable for typical export volumes)
+    const rows = orders.map((o) => {
+      const paymentProof = o.paymentProof;
+      const ticketTypeNames = [...new Set(o.attendees.map((a) => a.ticketType?.name).filter(Boolean))].join('; ');
+      const ticketNumbers = o.tickets.map((t) => t.ticketNumber).join('; ');
+      const ticketStatuses = [...new Set(o.tickets.map((t) => t.status))].join('; ');
+      const checkedInCount = o.tickets.filter((t: { status: string }) => t.status === 'CHECKED_IN').length;
+
+      return [
+        o.orderNumber,
+        o.createdAt.toISOString(),
+        o.event.title,
+        ticketTypeNames,
+        o.attendees.length,
+        o.user.name,
+        o.user.email,
+        o.user.phone ? `="${o.user.phone}"` : '',  // Force text format for phone
+        o.paymentMethod,
+        paymentProof?.utrNumber || '',
+        '', // Payment status (not directly tracked on order level)
+        o.status,
+        paymentProof?.status || '',
+        paymentProof?.reviewedBy?.name || '',
+        paymentProof?.reviewedAt?.toISOString() || '',
+        paymentProof?.rejectionReason || '',
+        ticketNumbers,
+        ticketStatuses,
+        checkedInCount,
+        (o.total / 100).toFixed(2),
+      ].map(esc).join(',');
+    });
+
+    const csvContent = '\uFEFF' + headerLine + rows.join('\n'); // BOM for Excel UTF-8
+
+    reply.header('Content-Type', 'text/csv; charset=utf-8');
+    reply.header('Content-Disposition', 'attachment; filename="orders-export.csv"');
+    reply.header('Cache-Control', 'no-cache');
+    return reply.send(csvContent);
   }
 
   // ── Check-ins ─────────────────────────────────────────────

@@ -412,18 +412,8 @@ export class OrganizerController {
         });
       }
 
-      // Update PaymentProof status
-      if (order.paymentProof && order.paymentProof.status === 'PENDING') {
-        await prisma.paymentProof.update({
-          where: { orderId: order.id },
-          data: {
-            status: 'APPROVED',
-            reviewedAt: new Date(),
-            reviewedById: organizerId,
-          },
-        });
-      }
-
+      // PaymentProof status is now updated INSIDE the finalization transaction
+      // for atomic consistency — no separate pre-update needed here.
       const result = await finalizeApprovedOrder(
         order.id,
         organizerId,
