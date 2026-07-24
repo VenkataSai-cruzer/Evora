@@ -3,6 +3,7 @@ import { prisma } from '../../infrastructure/database/prisma.js';
 import { generateQrToken, generateQrCodeDataUrl } from '../../infrastructure/rendering/qr.service.js';
 import { renderTicketHtml } from '../../infrastructure/rendering/ticket.service.js';
 import { renderTicketPng, renderTicketPdf } from '../../infrastructure/rendering/ticket.renderer.js';
+import { getTicketRenderPayload, payloadToRenderData } from '../../infrastructure/rendering/ticket-payload.js';
 import { writeAuditLog } from '../../infrastructure/audit/audit.service.js';
 
 export class TicketController {
@@ -167,68 +168,42 @@ export class TicketController {
 
   /**
    * GET /tickets/:ticketNumber/render
-   * Renders the ticket as a PNG image using the Ticket.png template.
+   * Renders the ticket as a PNG image using the canonical SVG renderer.
+   * Uses getTicketRenderPayload() for consistent data — same payload as PDF.
    * Authenticated — requires ticket ownership or ADMIN.
    */
   async renderPng(request: FastifyRequest, reply: FastifyReply) {
     const { ticketNumber } = request.params as { ticketNumber: string };
 
-    const ticket = await prisma.ticket.findUnique({
-      where: { ticketNumber },
-      include: {
-        event: { select: { title: true, startAt: true, venueName: true, venueAddress: true } },
-        ticketType: { select: { name: true } },
-        order: { select: { orderNumber: true } },
-      },
-    });
-
-    if (!ticket) return reply.status(404).send({ error: 'Ticket not found' });
-    if (ticket.userId !== request.user!.id && request.user!.role !== 'ADMIN') {
-      return reply.status(403).send({ error: 'Access denied' });
-    }
-    if (!ticket.qrToken) {
-      return reply.status(404).send({ code: 'TICKET_QR_MISSING', error: 'QR code not yet generated for this ticket. Contact admin to run QR migration.' });
-    }
-
-    const venue = ticket.event.venueAddress
-      ? `${ticket.event.venueName || ''}, ${ticket.event.venueAddress}`
-      : (ticket.event.venueName || 'Venue TBA');
-
-    const eventTitle = ticket.event.title || 'Event';
-    const eventDate = ticket.event.startAt
-      ? ticket.event.startAt.toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
-      : 'Date TBA';
-    const eventTime = ticket.event.startAt
-      ? ticket.event.startAt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
-      : 'Time TBA';
-    const ticketType = ticket.ticketType?.name || 'General Admission';
-    const attendeeName = ticket.attendeeName || 'Attendee';
-
-    request.log.info({ ticketNumber, eventTitle, attendeeName, ticketType, hasDate: !!ticket.event.startAt }, 'Rendering ticket PNG');
-
     try {
-      const pngBuffer = await renderTicketPng({
-        eventTitle,
-        eventDate,
-        eventTime,
-        venue,
-        attendeeName,
-        ticketType,
-        ticketNumber: ticket.ticketNumber,
-        orderNumber: ticket.order?.orderNumber || '',
-        qrPayload: ticket.qrToken,
+      const payload = await getTicketRenderPayload(ticketNumber);
+
+      // Check ownership
+      const ticket = await prisma.ticket.findUnique({
+        where: { ticketNumber },
+        select: { userId: true, qrToken: true },
       });
+      if (!ticket) return reply.status(404).send({ error: 'Ticket not found' });
+      if (ticket.userId !== request.user!.id && request.user!.role !== 'ADMIN') {
+        return reply.status(403).send({ error: 'Access denied' });
+      }
+      if (!ticket.qrToken) {
+        return reply.status(404).send({ code: 'TICKET_QR_MISSING', error: 'QR code not yet generated for this ticket. Contact admin to run QR migration.' });
+      }
+
+      request.log.info({ ticketNumber, eventTitle: payload.eventName, attendeeName: payload.attendeeName }, 'Rendering ticket PNG via canonical payload');
+
+      const pngBuffer = await renderTicketPng(payloadToRenderData(payload));
 
       reply.header('Content-Type', 'image/png');
       reply.header('Cache-Control', 'private, no-cache, no-store, must-revalidate');
       return reply.send(pngBuffer);
     } catch (error: any) {
       request.log.error({ error, ticketNumber }, 'Failed to render ticket PNG');
-      const message = error.message || 'Unknown error';
-      if (message.includes('Ticket template not found')) {
-        return reply.status(500).send({ code: 'TICKET_TEMPLATE_MISSING', error: 'Ticket template is not available. Please notify an administrator.' });
+      if (error.message?.includes('Ticket not found')) {
+        return reply.status(404).send({ error: 'Ticket not found' });
       }
-      return reply.status(500).send({ code: 'TICKET_RENDER_FAILED', error: 'Ticket preview could not be generated.', details: message });
+      return reply.status(500).send({ code: 'TICKET_RENDER_FAILED', error: 'Ticket preview could not be generated.', details: error.message });
     }
   }
 
@@ -304,54 +279,33 @@ export class TicketController {
     });
   }
 
+  /**
+   * GET /tickets/:ticketNumber/download
+   * Downloads the ticket as a PDF.
+   * Uses getTicketRenderPayload() for consistent data — same payload as preview.
+   */
   async downloadPdf(request: FastifyRequest, reply: FastifyReply) {
     const { ticketNumber } = request.params as { ticketNumber: string };
 
-    const ticket = await prisma.ticket.findUnique({
-      where: { ticketNumber },
-      include: {
-        event: { select: { title: true, startAt: true, venueName: true, venueAddress: true } },
-        ticketType: { select: { name: true } },
-        order: { select: { orderNumber: true } },
-      },
-    });
-
-    if (!ticket) return reply.status(404).send({ error: 'Ticket not found' });
-    if (ticket.userId !== request.user!.id && request.user!.role !== 'ADMIN') {
-      return reply.status(403).send({ error: 'Access denied' });
-    }
-    if (!ticket.qrToken) {
-      return reply.status(404).send({ code: 'TICKET_QR_MISSING', error: 'QR code not yet generated for this ticket. Contact admin to run QR migration.' });
-    }
-
-    const venue = ticket.event.venueAddress
-      ? `${ticket.event.venueName || ''}, ${ticket.event.venueAddress}`
-      : (ticket.event.venueName || 'Venue TBA');
-
-    const eventTitle = ticket.event.title || 'Event';
-    const eventDate = ticket.event.startAt
-      ? ticket.event.startAt.toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
-      : 'Date TBA';
-    const eventTime = ticket.event.startAt
-      ? ticket.event.startAt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
-      : 'Time TBA';
-    const ticketType = ticket.ticketType?.name || 'General Admission';
-    const attendeeName = ticket.attendeeName || 'Attendee';
-
-    request.log.info({ ticketNumber, eventTitle, attendeeName, ticketType }, 'Rendering ticket PDF');
-
     try {
-      const pdfBuffer = await renderTicketPdf({
-        eventTitle,
-        eventDate,
-        eventTime,
-        venue,
-        attendeeName,
-        ticketType,
-        ticketNumber: ticket.ticketNumber,
-        orderNumber: ticket.order?.orderNumber || '',
-        qrPayload: ticket.qrToken,
+      const payload = await getTicketRenderPayload(ticketNumber);
+
+      // Check ownership
+      const ticket = await prisma.ticket.findUnique({
+        where: { ticketNumber },
+        select: { userId: true, qrToken: true },
       });
+      if (!ticket) return reply.status(404).send({ error: 'Ticket not found' });
+      if (ticket.userId !== request.user!.id && request.user!.role !== 'ADMIN') {
+        return reply.status(403).send({ error: 'Access denied' });
+      }
+      if (!ticket.qrToken) {
+        return reply.status(404).send({ code: 'TICKET_QR_MISSING', error: 'QR code not yet generated for this ticket. Contact admin to run QR migration.' });
+      }
+
+      request.log.info({ ticketNumber, eventTitle: payload.eventName, attendeeName: payload.attendeeName }, 'Rendering ticket PDF via canonical payload');
+
+      const pdfBuffer = await renderTicketPdf(payloadToRenderData(payload));
 
       const safeFilename = ticketNumber.replace(/[^a-zA-Z0-9-_]/g, '_');
       reply.header('Content-Type', 'application/pdf');
@@ -360,11 +314,10 @@ export class TicketController {
       return reply.send(pdfBuffer);
     } catch (error: any) {
       request.log.error({ error, ticketNumber }, 'Failed to render ticket PDF');
-      const message = error.message || 'Unknown error';
-      if (message.includes('Ticket template not found')) {
-        return reply.status(500).send({ code: 'TICKET_TEMPLATE_MISSING', error: 'Ticket template is not available. Please notify an administrator.' });
+      if (error.message?.includes('Ticket not found')) {
+        return reply.status(404).send({ error: 'Ticket not found' });
       }
-      return reply.status(500).send({ code: 'TICKET_PDF_FAILED', error: 'PDF download could not be generated.', details: message });
+      return reply.status(500).send({ code: 'TICKET_PDF_FAILED', error: 'PDF download could not be generated.', details: error.message });
     }
   }
 }
