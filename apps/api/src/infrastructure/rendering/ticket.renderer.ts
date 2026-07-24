@@ -111,7 +111,7 @@ function createTicketOverlaySvg(
   const titleLineHeight = titleCfg.fontSizePt * 1.3;
   titleLines.forEach((line, i) => {
     lines.push(
-      `<text x="${titleX}" y="${titleY + i * titleLineHeight}" font-family="Inter, Arial, sans-serif" font-size="${titleCfg.fontSizePt}px" font-weight="700" fill="#FFFFFF">${escapeXml(line)}</text>`,
+      `<text x="${titleX}" y="${titleY + i * titleLineHeight}" font-family="sans-serif" font-size="${titleCfg.fontSizePt}px" font-weight="700" fill="#FFFFFF">${escapeXml(line)}</text>`,
     );
   });
 
@@ -120,7 +120,7 @@ function createTicketOverlaySvg(
   const nameX = Math.round(width * nameCfg.xRatio);
   const nameY = Math.round(height * nameCfg.yRatio);
   lines.push(
-    `<text x="${nameX}" y="${nameY}" font-family="Inter, Arial, sans-serif" font-size="${nameCfg.fontSizePt}px" font-weight="600" fill="#1a1a1a">${escapeXml(truncateText(data.attendeeName, 40))}</text>`,
+    `<text x="${nameX}" y="${nameY}" font-family="sans-serif" font-size="${nameCfg.fontSizePt}px" font-weight="600" fill="#1a1a1a">${escapeXml(truncateText(data.attendeeName, 40))}</text>`,
   );
 
   // ── Ticket Type ─────────────────────────────────────────
@@ -128,7 +128,7 @@ function createTicketOverlaySvg(
   const typeX = Math.round(width * typeCfg.xRatio);
   const typeY = Math.round(height * typeCfg.yRatio);
   lines.push(
-    `<text x="${typeX}" y="${typeY}" font-family="Inter, Arial, sans-serif" font-size="${typeCfg.fontSizePt}px" font-weight="500" fill="#666666">${escapeXml(data.ticketType)}</text>`,
+    `<text x="${typeX}" y="${typeY}" font-family="sans-serif" font-size="${typeCfg.fontSizePt}px" font-weight="500" fill="#666666">${escapeXml(data.ticketType)}</text>`,
   );
 
   // ── Event Date ─────────────────────────────────────────
@@ -137,7 +137,7 @@ function createTicketOverlaySvg(
   const dateY = Math.round(height * dateCfg.yRatio);
   const dateText = `${data.eventDate} • ${data.eventTime}`;
   lines.push(
-    `<text x="${dateX}" y="${dateY}" font-family="Inter, Arial, sans-serif" font-size="${dateCfg.fontSizePt}px" font-weight="500" fill="#1a1a1a">${escapeXml(truncateText(dateText, 50))}</text>`,
+    `<text x="${dateX}" y="${dateY}" font-family="sans-serif" font-size="${dateCfg.fontSizePt}px" font-weight="500" fill="#1a1a1a">${escapeXml(truncateText(dateText, 50))}</text>`,
   );
 
   // ── Venue ───────────────────────────────────────────────
@@ -149,7 +149,7 @@ function createTicketOverlaySvg(
   const venueLineHeight = 22;
   venueLines.forEach((line, i) => {
     lines.push(
-      `<text x="${venueX}" y="${venueY + i * venueLineHeight}" font-family="Inter, Arial, sans-serif" font-size="${venueCfg.fontSizePt}px" font-weight="500" fill="#1a1a1a">${escapeXml(line)}</text>`,
+      `<text x="${venueX}" y="${venueY + i * venueLineHeight}" font-family="sans-serif" font-size="${venueCfg.fontSizePt}px" font-weight="500" fill="#1a1a1a">${escapeXml(line)}</text>`,
     );
   });
 
@@ -159,7 +159,7 @@ function createTicketOverlaySvg(
   const numY = Math.round(height * numCfg.yRatio);
   const ticketLabel = `${data.ticketNumber}${data.orderNumber ? ` • ${data.orderNumber}` : ''}`;
   lines.push(
-    `<text x="${numX}" y="${numY}" font-family="'Courier New', monospace" font-size="${numCfg.fontSizePt}px" font-weight="600" fill="#1a1a1a">${escapeXml(ticketLabel)}</text>`,
+    `<text x="${numX}" y="${numY}" font-family="monospace" font-size="${numCfg.fontSizePt}px" font-weight="600" fill="#1a1a1a">${escapeXml(ticketLabel)}</text>`,
   );
 
   lines.push('</svg>');
