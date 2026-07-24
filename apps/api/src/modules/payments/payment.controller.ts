@@ -177,14 +177,19 @@ export class PaymentController {
         driveFileId = uploadResult.fileId;
         driveViewUrl = uploadResult.viewUrl;
       } catch (err) {
-        // Drive failure is non-fatal — fall back to LOCAL storage so the user's
-        // payment proof submission still succeeds. The error is logged for
-        // admin awareness.
-        console.error('[GoogleDrive] Upload failed, falling back to LOCAL:', err);
-        storageProvider = 'LOCAL';
+        // Drive is enabled and credentials are configured, but the upload FAILED.
+        // Returning a 503 tells the user it is a temporary backend issue, not
+        // something they did wrong. Do NOT silently fall back to LOCAL because
+        // that creates a database record with no accessible file — the admin
+        // would never be able to review the screenshot.
+        console.error('[GoogleDrive] Upload failed — returning 503:', err);
+        return reply.status(503).send({
+          error: 'Payment proof storage is temporarily unavailable. Please try again.',
+          details: 'Screenshot could not be saved. This is a server issue, not a problem with your submission.',
+        });
       }
     } else {
-      // Dev mode: store locally noted
+      // Dev mode: Drive not configured — store metadata only
       storageProvider = 'LOCAL';
       console.log(`[Dev] Payment proof stored locally for order ${orderNumber}, UTR ${normalized}`);
     }
