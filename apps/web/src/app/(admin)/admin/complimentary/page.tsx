@@ -15,7 +15,7 @@ export default function ComplimentaryTicketsPage() {
   const [events, setEvents] = useState<AdminEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [result, setResult] = useState<{ success?: boolean; message?: string; count?: number } | null>(null);
+  const [result, setResult] = useState<{ success?: boolean; message?: string; count?: number; ticketNumbers?: string[]; orderNumber?: string } | null>(null);
 
   const [form, setForm] = useState({
     eventId: '',
@@ -54,7 +54,7 @@ export default function ComplimentaryTicketsPage() {
         internalNote: form.internalNote || undefined,
         ticketTypeId: form.ticketTypeId || undefined,
       });
-      setResult({ success: true, message: `${res.count} ticket(s) issued successfully.`, count: res.count });
+      setResult({ success: true, message: `${res.count} ticket(s) issued successfully.`, count: res.count, ticketNumbers: res.ticketNumbers, orderNumber: res.orderNumber });
       setForm((f) => ({ ...f, attendeeName: '', attendeeEmail: '', attendeePhone: '', reason: '', internalNote: '', quantity: 1 }));
     } catch (err: any) {
       setResult({ success: false, message: err.message || 'Failed to issue tickets' });
@@ -153,7 +153,22 @@ export default function ComplimentaryTicketsPage() {
 
         {result && (
           <div className={`rounded-lg px-4 py-3 text-sm ${result.success ? 'bg-success/10 text-success' : 'bg-error/10 text-error'}`}>
-            {result.message}
+            <p>{result.message}</p>
+            {result.success && result.ticketNumbers && result.ticketNumbers.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {result.ticketNumbers.map((num: string) => (
+                  <a
+                    key={num}
+                    href={`/admin/tickets/${num}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 rounded-md bg-success/20 px-2.5 py-1 font-mono text-xs text-success hover:bg-success/30 transition-colors"
+                  >
+                    {num} ↗
+                  </a>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

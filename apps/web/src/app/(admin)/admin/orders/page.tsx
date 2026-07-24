@@ -349,6 +349,7 @@ export default function AdminOrdersPage() {
                   createdAt={selectedOrder.createdAt}
                   event={selectedOrder.event}
                   attendees={attendees}
+                  tickets={orderDetail?.tickets}
                   ticketsCount={orderDetail?.tickets?.length}
                   resubmissionCount={orderDetail?.resubmissionCount || selectedOrder.resubmissionCount}
                   loading={detailLoading}

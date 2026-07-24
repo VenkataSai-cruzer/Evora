@@ -37,6 +37,7 @@ export class CheckInController {
       include: {
         event: { select: { id: true, title: true, status: true } },
         ticketType: { select: { name: true } },
+        order: { select: { id: true, orderNumber: true } },
         checkIn: true,
       },
     });
@@ -129,7 +130,9 @@ export class CheckInController {
         ticketNumber: ticket.ticketNumber,
         attendeeName: ticket.attendeeName,
         ticketCategory: ticket.ticketCategory,
+        ticketType: ticket.ticketType?.name,
         event: ticket.event.title,
+        orderNumber: ticket.order?.orderNumber,
         originalCheckedInAt: ticket.checkIn.checkedInAt,
         originalCheckedInBy: originalScanner?.name ?? 'Unknown',
         originalGateName: ticket.checkIn.gateName,
@@ -185,8 +188,9 @@ export class CheckInController {
         attendeeName: ticket.attendeeName,
         attendeeEmail: ticket.attendeeEmail,
         ticketCategory: ticket.ticketCategory,
-        ticketType: ticket.ticketType.name,
+        ticketType: ticket.ticketType?.name,
         event: ticket.event.title,
+        orderNumber: ticket.order?.orderNumber,
         checkedInAt: result.checkedInAt,
         checkedInBy: request.user!.name,
         gateName: result.gateName,

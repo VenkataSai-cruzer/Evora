@@ -1,9 +1,16 @@
 'use client';
 
+import Link from 'next/link';
+
 interface Attendee {
   attendeeName: string;
   attendeeEmail?: string | null;
   ticketType?: { name: string; price: number } | null;
+}
+
+interface TicketRef {
+  ticketNumber: string;
+  status: string;
 }
 
 interface OrderSummaryCardProps {
@@ -13,6 +20,7 @@ interface OrderSummaryCardProps {
   createdAt: string;
   event?: { title: string; slug?: string } | null;
   attendees?: Attendee[];
+  tickets?: TicketRef[];
   ticketsCount?: number;
   resubmissionCount?: number;
   loading?: boolean;
@@ -40,6 +48,7 @@ export function OrderSummaryCard({
   createdAt,
   event,
   attendees = [],
+  tickets,
   ticketsCount,
   resubmissionCount,
   loading,
@@ -121,6 +130,25 @@ export function OrderSummaryCard({
                   </p>
                 )}
               </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Tickets — only shown for CONFIRMED orders (persisted, not transient) */}
+      {tickets && tickets.length > 0 && (
+        <div>
+          <p className="text-xs text-text-muted mb-1.5 uppercase tracking-wider">Tickets</p>
+          <div className="space-y-1">
+            {tickets.map((t) => (
+              <Link
+                key={t.ticketNumber}
+                href={`/admin/tickets/${t.ticketNumber}`}
+                className="flex items-center justify-between rounded-md bg-success/10 px-2.5 py-1.5 text-xs hover:bg-success/20 transition-colors"
+              >
+                <span className="font-mono text-success font-medium">{t.ticketNumber}</span>
+                <span className="text-text-muted">{t.status}</span>
+              </Link>
             ))}
           </div>
         </div>
