@@ -115,7 +115,10 @@ export default function AdminTicketsPage() {
           <option value="COMPLIMENTARY">Complimentary</option>
           <option value="VIP">VIP</option>
           <option value="MEDIA">Media</option>
+          <option value="ARTIST">Artist</option>
+          <option value="SPONSOR">Sponsor</option>
           <option value="STAFF">Staff</option>
+          <option value="VOLUNTEER">Volunteer</option>
         </select>
       </div>
 
