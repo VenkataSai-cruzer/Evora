@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { getAdminTicket, api } from '@/lib/api-client';
@@ -15,38 +15,36 @@ export default function AdminTicketDetailPage() {
   const [loading, setLoading] = useState(true);
   const [previewError, setPreviewError] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
-  const [qrObjectUrl, setQrObjectUrl] = useState<string | null>(null);
-  const qrUrlRef = useRef<string | null>(null);
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
+    setPreviewError(false);
+    setQrDataUrl(null);
+
     async function load() {
       try {
         const data = await getAdminTicket(ticketNumber);
+        if (cancelled) return;
         setTicket(data);
 
-        // Fetch QR via API client (includes auth cookies)
+        // QR endpoint returns JSON { qrCodeUrl: "data:image/png;base64,..." }
         try {
-          const { blob } = await api.fetchBinary(`/tickets/${ticketNumber}/qr`);
-          const url = URL.createObjectURL(blob);
-          qrUrlRef.current = url;
-          setQrObjectUrl(url);
+          const qrRes = await api.get<{ qrCodeUrl: string }>(`/tickets/${ticketNumber}/qr`);
+          if (!cancelled) setQrDataUrl(qrRes.qrCodeUrl);
         } catch {
-          setPreviewError(true);
+          if (!cancelled) setPreviewError(true);
         }
       } catch {
-        setPreviewError(true);
+        if (!cancelled) setPreviewError(true);
       }
-      finally { setLoading(false); }
+      finally {
+        if (!cancelled) setLoading(false);
+      }
     }
     load();
 
-    // Cleanup: revoke previous object URL when ticketNumber changes or on unmount
-    return () => {
-      if (qrUrlRef.current) {
-        URL.revokeObjectURL(qrUrlRef.current);
-        qrUrlRef.current = null;
-      }
-    };
+    return () => { cancelled = true; };
   }, [ticketNumber]);
 
   if (loading) {
@@ -212,9 +210,9 @@ export default function AdminTicketDetailPage() {
               <div className="flex h-48 items-center justify-center rounded-lg bg-surface-hover">
                 <p className="text-xs text-text-muted">QR preview unavailable</p>
               </div>
-            ) : qrObjectUrl ? (
+            ) : qrDataUrl ? (
               <img
-                src={qrObjectUrl}
+                src={qrDataUrl}
                 alt="Ticket QR Code"
                 className="mx-auto h-48 w-48 rounded-lg"
               />
