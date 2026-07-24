@@ -13,6 +13,8 @@ export async function organizerRoutes(app: FastifyInstance) {
   // My assigned events
   app.get('/events', controller.listMyEvents.bind(controller));
   app.get('/events/:eventId', controller.getEvent.bind(controller));
+  app.post('/events/:eventId/mark-sold-out', controller.markSoldOut.bind(controller));
+  app.post('/events/:eventId/reopen-booking', controller.reopenBooking.bind(controller));
 
   // Attendees — ALWAYS excludes ADMIN_ONLY
   app.get('/events/:eventId/attendees', controller.listAttendees.bind(controller));

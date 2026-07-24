@@ -1,5 +1,7 @@
+import { fileURLToPath } from 'node:url';
+import { existsSync } from 'node:fs';
 import { access, constants } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import sharp from 'sharp';
 import { prisma } from '../infrastructure/database/prisma.js';
 
@@ -8,27 +10,43 @@ export interface ValidationResult {
   checks: Array<{ name: string; status: 'pass' | 'fail'; message?: string }>;
 }
 
+// Resolve Ticket.png relative to this module.
+// Production: module at dist/config/ -> dist/assets/Ticket.png
+// Development: module at src/config/ -> apps/api/assets/Ticket.png
+const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
+function getTemplatePath(): string {
+  const prodPath = resolve(MODULE_DIR, '..', 'assets', 'Ticket.png');
+  const devPath = resolve(MODULE_DIR, '..', '..', 'assets', 'Ticket.png');
+  if (existsSync(prodPath)) return prodPath;
+  return devPath;
+}
+const TEMPLATE_PATH = getTemplatePath();
+
 /**
  * Validate that the Ticket.png template exists and is readable.
  *
- * NOTE: This check is non-fatal — the server can start and serve all
- * endpoints even without the template image. Only the PNG/PDF ticket
- * rendering endpoints will fail at request time if the template is absent.
- * The HTML-based ticket rendering does not need this file.
+ * Logs diagnostic info on every startup so Railway logs show whether the file exists.
  */
 async function validateTicketTemplate(): Promise<{ name: string; status: 'pass' | 'fail'; message?: string }> {
-  const templatePath = resolve(process.cwd(), 'assets', 'Ticket.png');
+  const templatePath = TEMPLATE_PATH;
+  console.log('[Startup] process.cwd():', process.cwd());
+  console.log('[Startup] Resolved template path:', templatePath);
+
   try {
     await access(templatePath, constants.R_OK);
     const metadata = await sharp(templatePath).metadata();
+    console.log('[Startup] Ticket template found:', templatePath);
+    console.log('[Startup] Template dimensions:', metadata.width, 'x', metadata.height);
     if (!metadata.width || !metadata.height) {
       return { name: 'ticket_template', status: 'pass', message: 'WARNING: Ticket template has invalid dimensions — PNG/PDF rendering will fail' };
     }
     return { name: 'ticket_template', status: 'pass' };
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unknown error';
-    console.warn(`[Startup] WARNING: Ticket template missing — ${msg}`);
-    console.warn('[Startup] WARNING: PNG/PDF ticket rendering will fail at request time. Place Ticket.png in assets/ to enable it.');
+    console.warn(`[Startup] WARNING: Ticket template NOT FOUND at ${templatePath}`);
+    console.warn(`[Startup] WARNING: ${msg}`);
+    console.warn('[Startup] WARNING: PNG/PDF ticket rendering will fail at request time.');
+    console.warn('[Startup] HINT: Ensure assets/Ticket.png is copied to the build output (e.g. apps/api/dist/assets/)');
     return { name: 'ticket_template', status: 'pass', message: 'WARNING: Ticket template not found — PNG/PDF rendering unavailable' };
   }
 }

@@ -1,6 +1,38 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { prisma } from '../../infrastructure/database/prisma.js';
 
+/**
+ * Compute the authoritative public booking status for an event.
+ * Priority order: CANCELLED > SOLD_OUT (manual) > SOLD_OUT (natural) > PAUSED > CLOSED > ENDED > NOT_STARTED > LIVE
+ */
+function computeBookingStatus(
+  event: { status: string; salesPaused: boolean; bookingClosed: boolean; salesStartAt: Date | null; salesEndAt: Date | null; startAt: Date },
+  ticketTypes: Array<{ capacity: number; soldCount: number }>,
+): string {
+  const now = new Date();
+
+  // Cancelled events are never bookable
+  if (event.status === 'CANCELLED') return 'CANCELLED';
+
+  // Manual sold out (bookingClosed without natural exhaustion)
+  if (event.bookingClosed) return 'SOLD_OUT';
+
+  // Paused
+  if (event.salesPaused) return 'PAUSED';
+
+  // Natural exhaustion: all capacity-based ticket types are sold out
+  const hasCapacityTypes = ticketTypes.some((tt) => tt.capacity > 0);
+  const allSoldOut = hasCapacityTypes && ticketTypes.every((tt) => tt.capacity <= 0 || tt.soldCount >= tt.capacity);
+  if (allSoldOut) return 'SOLD_OUT';
+
+  // Not yet started / ended
+  if (event.salesStartAt && event.salesStartAt > now) return 'NOT_STARTED';
+  if (event.salesEndAt && event.salesEndAt < now) return 'ENDED';
+  if (event.status !== 'PUBLISHED') return 'CLOSED';
+
+  return 'LIVE';
+}
+
 export class EventController {
   async list(request: FastifyRequest, _reply: FastifyReply) {
     const query = request.query as { status?: string; upcoming?: string };
@@ -33,6 +65,10 @@ export class EventController {
         venueName: true,
         venueAddress: true,
         totalCapacity: true,
+        salesPaused: true,
+        bookingClosed: true,
+        salesStartAt: true,
+        salesEndAt: true,
         ticketTypes: {
           where: { active: true },
           select: {
@@ -56,7 +92,12 @@ export class EventController {
 
     const total = await prisma.event.count({ where });
 
-    return { events, total };
+    const eventsWithStatus = events.map((event) => ({
+      ...event,
+      bookingStatus: computeBookingStatus(event, event.ticketTypes),
+    }));
+
+    return { events: eventsWithStatus, total };
   }
 
   async getBySlug(
@@ -100,6 +141,8 @@ export class EventController {
       return reply.status(404).send({ error: 'Event not found' });
     }
 
-    return { event };
+    const bookingStatus = computeBookingStatus(event, event.ticketTypes);
+
+    return { event: { ...event, bookingStatus } };
   }
 }

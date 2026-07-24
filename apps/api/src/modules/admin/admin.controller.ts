@@ -1,6 +1,6 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { prisma } from '../../infrastructure/database/prisma.js';
-import { finalizeApprovedOrder } from '../orders/order-finalization.service.js';
+import { finalizeApprovedOrder, issueTicketsForOrder } from '../orders/order-finalization.service.js';
 import { generateQrToken } from '../../infrastructure/rendering/qr.service.js';
 import { writeAuditLog } from '../../infrastructure/audit/audit.service.js';
 import { GoogleDriveService } from '../../infrastructure/storage/google-drive.service.js';
@@ -146,6 +146,86 @@ export class AdminController {
     const event = await prisma.event.update({ where: { id }, data: { bookingClosed: true } });
     await writeAuditLog('EVENT_CLOSED', 'Event', id, { actorId: request.user!.id, actorRole: 'ADMIN', eventId: id });
     return { event };
+  }
+
+  /**
+   * POST /admin/events/:id/mark-sold-out
+   * Manually mark an event as sold out.
+   * Sets bookingClosed = true to block new bookings.
+   * Does NOT modify capacity, soldCount, existing orders, or tickets.
+   */
+  async markSoldOut(request: FastifyRequest, reply: FastifyReply) {
+    const { id } = request.params as { id: string };
+
+    const event = await prisma.event.findUnique({ where: { id }, select: { id: true, title: true, bookingClosed: true } });
+    if (!event) return reply.status(404).send({ error: 'Event not found' });
+
+    if (event.bookingClosed) {
+      return reply.send({ success: true, message: 'Event is already marked as sold out/closed.' });
+    }
+
+    await prisma.event.update({ where: { id }, data: { bookingClosed: true } });
+
+    await writeAuditLog('EVENT_MARKED_SOLD_OUT', 'Event', id, {
+      actorId: request.user!.id, actorRole: 'ADMIN', eventId: id,
+    });
+
+    return reply.send({ success: true, message: 'Event marked as sold out. New bookings blocked.' });
+  }
+
+  /**
+   * POST /admin/events/:id/reopen-booking
+   * Reopen booking for a manually closed/sold-out event.
+   * Only succeeds if remaining capacity > 0 and booking period is still valid.
+   */
+  async reopenBooking(request: FastifyRequest, reply: FastifyReply) {
+    const { id } = request.params as { id: string };
+
+    const event = await prisma.event.findUnique({
+      where: { id },
+      include: { ticketTypes: { select: { id: true, capacity: true, soldCount: true } } },
+    });
+    if (!event) return reply.status(404).send({ error: 'Event not found' });
+
+    // Check remaining capacity across all ticket types
+    const totalRemaining = event.ticketTypes.reduce((sum, tt) => {
+      if (tt.capacity <= 0) return sum; // capacity 0 = unlimited (or not set)
+      return sum + Math.max(0, tt.capacity - tt.soldCount);
+    }, 0);
+
+    // If event has capacity-based ticket types and all are sold out, block reopen
+    const hasCapacityTypes = event.ticketTypes.some((tt) => tt.capacity > 0);
+    if (hasCapacityTypes && totalRemaining <= 0) {
+      return reply.status(409).send({
+        error: 'Booking cannot be reopened because no tickets remain.',
+        remainingCapacity: 0,
+      });
+    }
+
+    if (event.status !== 'PUBLISHED') {
+      return reply.status(409).send({
+        error: 'Event must be PUBLISHED to reopen booking.',
+      });
+    }
+
+    // Check booking period hasn't fully ended
+    if (event.salesEndAt && event.salesEndAt < new Date()) {
+      return reply.status(409).send({
+        error: 'Booking cannot be reopened because the booking period has ended. Adjust sales dates separately.',
+      });
+    }
+
+    if (!event.bookingClosed && !event.salesPaused) {
+      return reply.send({ success: true, message: 'Booking is already open.' });
+    }
+
+    await prisma.event.update({ where: { id }, data: { bookingClosed: false, salesPaused: false } });
+
+    await writeAuditLog('EVENT_REOPENED', 'Event', id, {
+      actorId: request.user!.id, actorRole: 'ADMIN', eventId: id,
+    });
+
+    return reply.send({ success: true, message: 'Booking reopened. Public status set to LIVE.' });
   }
 
   // ── Attendees (ADMIN sees ALL ticket categories) ──────────
@@ -388,7 +468,7 @@ export class AdminController {
    * Admin must provide a reason.
    *
    * Order stays alive at REJECTED status — user can resubmit proof on the same order.
-   * Capacity is NOT released on rejection (remains reserved for the order).
+   * Reserved capacity IS released so public availability reflects true inventory.
    */
   async rejectOrder(request: FastifyRequest, reply: FastifyReply) {
     const { id } = request.params as { id: string };
@@ -419,9 +499,29 @@ export class AdminController {
         if (order.paymentProof) {
           await tx.paymentProof.update({ where: { orderId: id }, data: { status: 'REJECTED', rejectionReason: body.reason, reviewedAt: new Date(), reviewedById: adminId } });
         }
+
+        // Release reserved capacity: soldCount was incremented at booking creation
+        // and must be decremented when the order is rejected.
+        const attendees = await tx.orderAttendee.findMany({
+          where: { orderId: id },
+          select: { ticketTypeId: true },
+        });
+        const typeCounts = new Map<string, number>();
+        for (const a of attendees) {
+          typeCounts.set(a.ticketTypeId, (typeCounts.get(a.ticketTypeId) || 0) + 1);
+        }
+        for (const [ticketTypeId, quantity] of typeCounts) {
+          const tt = await tx.ticketType.findUnique({ where: { id: ticketTypeId } });
+          if (tt) {
+            await tx.ticketType.update({
+              where: { id: ticketTypeId },
+              data: { soldCount: Math.max(0, tt.soldCount - quantity) },
+            });
+          }
+        }
+
         // Order stays alive at REJECTED — NOT CANCELLED
-        // Capacity remains reserved — user can resubmit proof
-        // Rejection reason stored on PaymentProof (not duplicated on Order)
+        // Capacity IS released so public count reflects true availability
         await tx.order.update({
           where: { id },
           data: { status: 'REJECTED' },
@@ -894,11 +994,12 @@ export class AdminController {
     }
 
     // Cannot cancel confirmed orders — cancel individual tickets instead
-    const cancellableStates = ['PENDING_PAYMENT', 'PENDING_VERIFICATION', 'REJECTED', 'EXPIRED'];
+    // REJECTED is excluded because rejection already releases capacity.
+    const cancellableStates = ['PENDING_PAYMENT', 'PENDING_VERIFICATION', 'EXPIRED'];
     if (!cancellableStates.includes(order.status)) {
       return reply.status(409).send({
         code: 'ORDER_NOT_CANCELLABLE',
-        error: `Order status is "${order.status}" — cannot cancel. Only PENDING_PAYMENT, PENDING_VERIFICATION, REJECTED, or EXPIRED orders can be cancelled.`,
+        error: `Order status is "${order.status}" — cannot cancel. Only PENDING_PAYMENT, PENDING_VERIFICATION, or EXPIRED orders can be cancelled.`,
       });
     }
 
@@ -957,6 +1058,77 @@ export class AdminController {
         status: 'CANCELLED',
         capacityReleased: released.length,
       },
+    });
+  }
+
+  // ── Expired Orders Processing ────────────────────────────
+
+  /**
+   * POST /admin/orders/process-expired
+   * Find expired pending orders and release their reserved capacity.
+   * Idempotent: only processes orders with expiresAt < now() and status PENDING_PAYMENT.
+   * Marks them EXPIRED and decrements soldCount atomically.
+   */
+  async processExpiredOrders(request: FastifyRequest, reply: FastifyReply) {
+    const adminId = request.user!.id;
+    const now = new Date();
+
+    const expiredOrders = await prisma.order.findMany({
+      where: {
+        status: 'PENDING_PAYMENT',
+        expiresAt: { lt: now },
+      },
+      select: { id: true, orderNumber: true, eventId: true },
+    });
+
+    let processed = 0;
+    for (const order of expiredOrders) {
+      await prisma.$transaction(async (tx) => {
+        // Re-check status inside transaction to prevent race
+        const current = await tx.order.findUnique({
+          where: { id: order.id },
+          select: { status: true },
+        });
+        if (!current || current.status !== 'PENDING_PAYMENT') return;
+
+        // Release reserved capacity
+        const attendees = await tx.orderAttendee.findMany({
+          where: { orderId: order.id },
+          select: { ticketTypeId: true },
+        });
+        const typeCounts = new Map<string, number>();
+        for (const a of attendees) {
+          typeCounts.set(a.ticketTypeId, (typeCounts.get(a.ticketTypeId) || 0) + 1);
+        }
+        for (const [ticketTypeId, quantity] of typeCounts) {
+          const tt = await tx.ticketType.findUnique({ where: { id: ticketTypeId } });
+          if (tt) {
+            await tx.ticketType.update({
+              where: { id: ticketTypeId },
+              data: { soldCount: Math.max(0, tt.soldCount - quantity) },
+            });
+          }
+        }
+
+        await tx.order.update({
+          where: { id: order.id },
+          data: { status: 'EXPIRED' },
+        });
+      });
+
+      await writeAuditLog('ORDER_EXPIRED', 'Order', order.id, {
+        actorId: adminId, actorRole: 'ADMIN', eventId: order.eventId,
+        metadata: { orderNumber: order.orderNumber },
+      });
+
+      processed++;
+    }
+
+    return reply.send({
+      processed,
+      message: processed === 0
+        ? 'No expired orders found.'
+        : `${processed} expired order(s) processed. Capacity released.`,
     });
   }
 

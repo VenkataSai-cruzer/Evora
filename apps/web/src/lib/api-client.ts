@@ -179,6 +179,42 @@ export const api = {
 
   del: <T>(path: string, options?: RequestInit) =>
     request<T>(path, { ...options, method: 'DELETE' }),
+
+  /**
+   * Fetch a binary response (e.g. image/png, application/pdf) as a Blob.
+   * Uses the same auth/cookie handling as the JSON API client.
+   * Does NOT parse JSON.
+   */
+  fetchBinary: async (path: string, options?: RequestInit): Promise<{ blob: Blob; contentType: string; contentDisposition?: string }> => {
+    const url = `${API_BASE_URL}${path}`;
+    const headers: Record<string, string> = {
+      ...(options?.headers as Record<string, string>),
+    };
+
+    const res = await fetch(url, {
+      ...options,
+      method: options?.method || 'GET',
+      headers,
+      credentials: 'include',
+    });
+
+    if (!res.ok) {
+      let errorMsg = 'Request failed';
+      try {
+        const errBody = await res.json();
+        errorMsg = errBody.error || errBody.message || `HTTP ${res.status}`;
+      } catch {
+        errorMsg = `HTTP ${res.status} ${res.statusText}`;
+      }
+      throw new ApiClientError(res.status, errorMsg);
+    }
+
+    const contentType = res.headers.get('content-type') || 'application/octet-stream';
+    const contentDisposition = res.headers.get('content-disposition') || undefined;
+    const blob = await res.blob();
+
+    return { blob, contentType, contentDisposition };
+  },
 } as const;
 
 // ── Auth ────────────────────────────────────────────────
@@ -388,6 +424,40 @@ export async function resumeSales(id: string): Promise<void> {
 
 export async function closeSales(id: string): Promise<void> {
   await api.post(`/admin/events/${id}/close-sales`);
+}
+
+export async function markSoldOut(id: string): Promise<void> {
+  await api.post(`/admin/events/${id}/mark-sold-out`);
+}
+
+export async function reopenBooking(id: string): Promise<void> {
+  await api.post(`/admin/events/${id}/reopen-booking`);
+}
+
+// ── Organizer Events ────────────────────────────────────
+
+export async function getOrganizerEvents(params?: {
+  page?: number;
+  limit?: number;
+}): Promise<{ events: any[]; total: number }> {
+  const searchParams = new URLSearchParams();
+  if (params?.page) searchParams.set('page', String(params.page));
+  if (params?.limit) searchParams.set('limit', String(params.limit));
+  const qs = searchParams.toString();
+  return api.get(`/organizer/events${qs ? `?${qs}` : ''}`);
+}
+
+export async function getOrganizerEvent(eventId: string): Promise<EventDetailResponse> {
+  const data = await api.get<{ event: EventDetailResponse }>(`/organizer/events/${eventId}`);
+  return data.event;
+}
+
+export async function organizerMarkSoldOut(eventId: string): Promise<void> {
+  await api.post(`/organizer/events/${eventId}/mark-sold-out`);
+}
+
+export async function organizerReopenBooking(eventId: string): Promise<void> {
+  await api.post(`/organizer/events/${eventId}/reopen-booking`);
 }
 
 // ── Orders ──────────────────────────────────────────────

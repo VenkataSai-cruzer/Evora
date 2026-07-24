@@ -5,6 +5,95 @@ import { writeAuditLog } from '../../infrastructure/audit/audit.service.js';
 
 export type ApprovalSource = 'MANUAL_ADMIN' | 'SYSTEM';
 
+// ── Shared Ticket Issuance Service ─────────────────────────
+
+interface IssueTicketsOptions {
+  tx: any; // Prisma transaction client
+  orderId: string;
+  issuedById: string;
+  source: string;
+}
+
+interface IssueTicketsResult {
+  ticketNumbers: string[];
+  ticketsCreated: number;
+}
+
+/**
+ * Authoritative ticket-issuance service.
+ * Creates one Ticket per OrderAttendee with unique QR token.
+ *
+ * IDEMPOTENT: Skips attendees that already have a Ticket.
+ * Must run inside an existing Prisma transaction.
+ */
+export async function issueTicketsForOrder(opts: IssueTicketsOptions): Promise<IssueTicketsResult> {
+  const { tx, orderId, issuedById, source } = opts;
+
+  // Load order with attendee and ticket info
+  const order = await tx.order.findUnique({
+    where: { id: orderId },
+    include: {
+      event: { select: { id: true, ticketNumberPrefix: true } },
+      attendees: { include: { ticketType: { select: { name: true, price: true } } } },
+      tickets: { select: { orderAttendeeId: true, ticketNumber: true } },
+    },
+  });
+
+  if (!order) throw new Error('Order not found');
+
+  // Generate a derived order number for naming (fallback if no orderNumber is set)
+  const orderRef = order.orderNumber || orderId.slice(0, 8).toUpperCase();
+
+  // Build set of attendee IDs that already have tickets
+  const existingAttendeeIds = new Set(
+    order.tickets.map((t: { orderAttendeeId: string | null }) => t.orderAttendeeId).filter(Boolean),
+  );
+
+  const generatedTickets: { ticketNumber: string; id: string }[] = [];
+  const prefix = order.event.ticketNumberPrefix || '7N-';
+
+  for (const attendee of order.attendees) {
+    // Skip if ticket already exists for this attendee
+    if (existingAttendeeIds.has(attendee.id)) continue;
+
+    const { token, tokenHash } = generateQrToken();
+    const seq = generatedTickets.length + 1;
+    const ticketNumber = `${prefix}${orderRef}-${String(seq).padStart(2, '0')}`;
+
+    const ticket = await tx.ticket.create({
+      data: {
+        ticketNumber,
+        eventId: order.eventId,
+        userId: order.userId,
+        orderId: order.id,
+        orderAttendeeId: attendee.id,
+        ticketTypeId: attendee.ticketTypeId,
+        attendeeName: attendee.attendeeName,
+        attendeeEmail: attendee.attendeeEmail || '',
+        attendeePhone: attendee.attendeePhone || '',
+        ticketCategory: attendee.ticketCategory || 'PAID',
+        source,
+        visibility: attendee.ticketCategory && attendee.ticketCategory !== 'PAID' ? 'ADMIN_ONLY' : 'STANDARD',
+        issuedById,
+        issuedByRole: source.includes('COMPLIMENTARY') ? 'ADMIN' : 'ADMIN',
+        pricePaid: attendee.ticketType?.price || 0,
+        status: 'CONFIRMED',
+        qrToken: token,
+        qrTokenHash: tokenHash,
+        templateVersion: 1,
+        renderingStatus: 'PENDING',
+      },
+    });
+
+    generatedTickets.push({ ticketNumber: ticket.ticketNumber, id: ticket.id });
+  }
+
+  return {
+    ticketNumbers: generatedTickets.map((t) => t.ticketNumber),
+    ticketsCreated: generatedTickets.length,
+  };
+}
+
 // ── Capacity Management ─────────────────────────────────────
 
 interface CapacityReleaseItem {
@@ -165,58 +254,19 @@ export async function finalizeApprovedOrder(
         },
       });
 
-      // Guard: prevent duplicate ticket issuance — safety net inside transaction
-      if (order.tickets.length > 0) {
-        return {
-          orderId: order.id,
-          orderNumber: order.orderNumber,
-          ticketsCreated: 0,
-          ticketNumbers: order.tickets.map((t) => t.ticketNumber),
-          eventId: order.eventId,
-        };
-      }
-
-      // Generate tickets for each attendee
-      const generatedTickets: { ticketNumber: string; id: string }[] = [];
-      for (const attendee of order.attendees) {
-        const { token, tokenHash } = generateQrToken();
-        const prefix = order.event.ticketNumberPrefix || '7N-';
-        const seq = generatedTickets.length + 1;
-        const ticketNumber = `${prefix}${order.orderNumber}-${String(seq).padStart(2, '0')}`;
-
-        const ticket = await tx.ticket.create({
-          data: {
-            ticketNumber,
-            eventId: order.eventId,
-            userId: order.userId,
-            orderId: order.id,
-            orderAttendeeId: attendee.id,
-            ticketTypeId: attendee.ticketTypeId,
-            attendeeName: attendee.attendeeName,
-            attendeeEmail: attendee.attendeeEmail || '',
-            attendeePhone: attendee.attendeePhone || '',
-            ticketCategory: 'PAID',
-            source: source === 'MANUAL_ADMIN' ? 'PAYMENT_APPROVAL' : 'SYSTEM',
-            visibility: 'STANDARD',
-            issuedById: approvedById,
-            issuedByRole: 'ADMIN',
-            pricePaid: attendee.ticketType.price,
-            status: 'CONFIRMED',
-            qrToken: token,
-            qrTokenHash: tokenHash,
-            templateVersion: 1,
-            renderingStatus: 'PENDING',
-          },
-        });
-
-        generatedTickets.push({ ticketNumber: ticket.ticketNumber, id: ticket.id });
-      }
+      // Use the shared ticket-issuance service (idempotent, one QR per attendee)
+      const ticketResult = await issueTicketsForOrder({
+        tx,
+        orderId: order.id,
+        issuedById: approvedById,
+        source: source === 'MANUAL_ADMIN' ? 'PAYMENT_APPROVAL' : 'SYSTEM',
+      });
 
       return {
         orderId: order.id,
         orderNumber: order.orderNumber,
-        ticketsCreated: generatedTickets.length,
-        ticketNumbers: generatedTickets.map((t) => t.ticketNumber),
+        ticketsCreated: ticketResult.ticketsCreated,
+        ticketNumbers: ticketResult.ticketNumbers,
         eventId: order.eventId,
       };
     },

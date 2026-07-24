@@ -3,6 +3,7 @@ import { prisma } from '../../infrastructure/database/prisma.js';
 import { generateQrToken, generateQrCodeDataUrl } from '../../infrastructure/rendering/qr.service.js';
 import { renderTicketHtml } from '../../infrastructure/rendering/ticket.service.js';
 import { renderTicketPng, renderTicketPdf } from '../../infrastructure/rendering/ticket.renderer.js';
+import { writeAuditLog } from '../../infrastructure/audit/audit.service.js';
 
 export class TicketController {
   async list(request: FastifyRequest, reply: FastifyReply) {
@@ -185,7 +186,9 @@ export class TicketController {
     if (ticket.userId !== request.user!.id && request.user!.role !== 'ADMIN') {
       return reply.status(403).send({ error: 'Access denied' });
     }
-    if (!ticket.qrToken) return reply.status(404).send({ error: 'Ticket not ready' });
+    if (!ticket.qrToken) {
+      return reply.status(404).send({ code: 'TICKET_QR_MISSING', error: 'QR code not yet generated for this ticket. Contact admin to run QR migration.' });
+    }
 
     const venue = ticket.event.venueAddress
       ? `${ticket.event.venueName}, ${ticket.event.venueAddress}`
@@ -207,9 +210,13 @@ export class TicketController {
       reply.header('Content-Type', 'image/png');
       reply.header('Cache-Control', 'private, no-cache, no-store, must-revalidate');
       return reply.send(pngBuffer);
-    } catch (error) {
+    } catch (error: any) {
       request.log.error({ error, ticketNumber }, 'Failed to render ticket PNG');
-      return reply.status(500).send({ error: 'Ticket rendering failed' });
+      const message = error.message || 'Unknown error';
+      if (message.includes('Ticket template not found')) {
+        return reply.status(500).send({ code: 'TICKET_TEMPLATE_MISSING', error: 'Ticket template is not available. Please notify an administrator.' });
+      }
+      return reply.status(500).send({ code: 'TICKET_RENDER_FAILED', error: 'Ticket preview could not be generated.', details: message });
     }
   }
 
@@ -219,10 +226,9 @@ export class TicketController {
    */
   /**
    * POST /tickets/migrate-qr
-   * Admin-only: Generate missing QR tokens for tickets created before QR generation was implemented.
-   * This ensures backward compatibility so ALL tickets can render with Ticket.png + QR.
-   *
-   * Only processes tickets where qrToken is null.
+   * Admin-only: Generate missing QR tokens for tickets created before QR generation.
+   * Processes tickets in bounded batches for safe production use.
+   * Idempotent: second run produces zero changes.
    * Skips CANCELLED and EXPIRED tickets.
    */
   async migrateQrTokens(request: FastifyRequest, reply: FastifyReply) {
@@ -230,17 +236,31 @@ export class TicketController {
       return reply.status(403).send({ error: 'Admin only' });
     }
 
+    const body = request.body as { batchSize?: number } | undefined;
+    const batchSize = Math.min(Math.max(1, body?.batchSize ?? 100), 500);
+
+    // Count total tickets needing migration (not just batch)
+    const totalPending = await prisma.ticket.count({
+      where: {
+        qrToken: null,
+        status: { notIn: ['CANCELLED', 'EXPIRED'] },
+      },
+    });
+
+    if (totalPending === 0) {
+      return reply.send({ processed: 0, migrated: 0, remaining: 0, complete: true, message: 'No tickets need QR migration' });
+    }
+
+    // Process one batch
     const tickets = await prisma.ticket.findMany({
       where: {
         qrToken: null,
         status: { notIn: ['CANCELLED', 'EXPIRED'] },
       },
-      select: { id: true, ticketNumber: true, status: true },
+      select: { id: true, ticketNumber: true },
+      take: batchSize,
+      orderBy: { createdAt: 'asc' },
     });
-
-    if (tickets.length === 0) {
-      return reply.send({ migrated: 0, message: 'No tickets need QR migration' });
-    }
 
     let migrated = 0;
     for (const ticket of tickets) {
@@ -252,10 +272,23 @@ export class TicketController {
       migrated++;
     }
 
+    const remaining = totalPending - migrated;
+
+    // Audit log — does NOT include QR tokens
+    await writeAuditLog('QR_MIGRATION', 'Ticket', 'batch', {
+      actorId: request.user!.id,
+      actorRole: 'ADMIN',
+      metadata: { processed: tickets.length, migrated, remaining, complete: remaining === 0 },
+    });
+
     return reply.send({
+      processed: tickets.length,
       migrated,
-      message: `Generated QR tokens for ${migrated} ticket(s)`,
-      tickets: tickets.map((t) => t.ticketNumber),
+      remaining,
+      complete: remaining === 0,
+      message: remaining === 0
+        ? `All ${migrated} ticket(s) migrated.`
+        : `Migrated ${migrated} ticket(s). ${remaining} remaining. Call again with same endpoint.`,
     });
   }
 
@@ -275,7 +308,9 @@ export class TicketController {
     if (ticket.userId !== request.user!.id && request.user!.role !== 'ADMIN') {
       return reply.status(403).send({ error: 'Access denied' });
     }
-    if (!ticket.qrToken) return reply.status(404).send({ error: 'Ticket not ready' });
+    if (!ticket.qrToken) {
+      return reply.status(404).send({ code: 'TICKET_QR_MISSING', error: 'QR code not yet generated for this ticket. Contact admin to run QR migration.' });
+    }
 
     const venue = ticket.event.venueAddress
       ? `${ticket.event.venueName}, ${ticket.event.venueAddress}`
@@ -299,9 +334,13 @@ export class TicketController {
       reply.header('Content-Disposition', `attachment; filename="${safeFilename}.pdf"`);
       reply.header('Cache-Control', 'private, no-cache');
       return reply.send(pdfBuffer);
-    } catch (error) {
+    } catch (error: any) {
       request.log.error({ error, ticketNumber }, 'Failed to render ticket PDF');
-      return reply.status(500).send({ error: 'PDF generation failed' });
+      const message = error.message || 'Unknown error';
+      if (message.includes('Ticket template not found')) {
+        return reply.status(500).send({ code: 'TICKET_TEMPLATE_MISSING', error: 'Ticket template is not available. Please notify an administrator.' });
+      }
+      return reply.status(500).send({ code: 'TICKET_PDF_FAILED', error: 'PDF download could not be generated.', details: message });
     }
   }
 }

@@ -22,6 +22,8 @@ export async function adminRoutes(app: FastifyInstance) {
   app.post('/events/:id/pause-sales', controller.pauseSales.bind(controller));
   app.post('/events/:id/resume-sales', controller.resumeSales.bind(controller));
   app.post('/events/:id/close-sales', controller.closeSales.bind(controller));
+  app.post('/events/:id/mark-sold-out', controller.markSoldOut.bind(controller));
+  app.post('/events/:id/reopen-booking', controller.reopenBooking.bind(controller));
 
   // Attendees (admin sees ALL categories)
   app.get('/events/:id/attendees', controller.listAttendees.bind(controller));
@@ -58,6 +60,9 @@ export async function adminRoutes(app: FastifyInstance) {
 
   // ── CSV Export ────────────────────────────────────────────
   app.get('/orders/export.csv', controller.exportOrdersCsv.bind(controller));
+
+  // ── Expired Orders ─────────────────────────────────────────
+  app.post('/orders/process-expired', controller.processExpiredOrders.bind(controller));
 
   // ── Dashboard Stats ──────────────────────────────────────
   app.get('/stats', controller.getStats.bind(controller));

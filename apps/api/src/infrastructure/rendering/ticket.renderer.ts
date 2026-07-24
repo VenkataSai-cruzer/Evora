@@ -1,5 +1,24 @@
+import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
+
+// Resolve the template path relative to this module, NOT process.cwd().
+// Production: module at dist/infrastructure/rendering/ -> dist/assets/Ticket.png
+// Development: module at src/infrastructure/rendering/ -> apps/api/assets/Ticket.png
+const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
+function getTemplatePath(): string {
+  const candidates = [
+    // Production (dist/assets/Ticket.png after postbuild copy)
+    path.resolve(MODULE_DIR, '..', '..', 'assets', 'Ticket.png'),
+    // Development (apps/api/assets/Ticket.png)
+    path.resolve(MODULE_DIR, '..', '..', '..', 'assets', 'Ticket.png'),
+  ];
+  for (const p of candidates) {
+    if (existsSync(p)) return p;
+  }
+  return candidates[0]; // fallback — will fail with descriptive error
+}
+const TEMPLATE_PATH = getTemplatePath();
 import sharp from 'sharp';
 import QRCode from 'qrcode';
 import { PDFDocument } from 'pdf-lib';
@@ -156,7 +175,7 @@ function createTicketOverlaySvg(
  * 4. Returns final PNG buffer
  */
 export async function renderTicketPng(data: TicketRenderData): Promise<Buffer> {
-  const templatePath = path.resolve(process.cwd(), 'assets', 'Ticket.png');
+  const templatePath = TEMPLATE_PATH;
   if (!existsSync(templatePath)) {
     throw new Error(`Ticket template not found at ${templatePath}`);
   }

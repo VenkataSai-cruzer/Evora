@@ -218,6 +218,96 @@ export class OrganizerController {
     };
   }
 
+  // ── Event Booking Controls (event-scoped via assignment) ──
+
+  /**
+   * POST /organizer/events/:eventId/mark-sold-out
+   * Manually mark an assigned event as sold out.
+   * Sets bookingClosed = true to block new bookings.
+   */
+  async markSoldOut(request: FastifyRequest, reply: FastifyReply) {
+    const organizerId = request.user!.id;
+    const { eventId } = request.params as { eventId: string };
+
+    try {
+      await getOrganizerAssignment(organizerId, eventId);
+    } catch {
+      return reply.status(403).send({ error: 'Not assigned to this event' });
+    }
+
+    const event = await prisma.event.findUnique({ where: { id: eventId }, select: { id: true, title: true, bookingClosed: true } });
+    if (!event) return reply.status(404).send({ error: 'Event not found' });
+
+    if (event.bookingClosed) {
+      return reply.send({ success: true, message: 'Event is already marked as sold out/closed.' });
+    }
+
+    await prisma.event.update({ where: { id: eventId }, data: { bookingClosed: true } });
+
+    await writeAuditLog('EVENT_MARKED_SOLD_OUT', 'Event', eventId, {
+      actorId: request.user!.id, actorRole: 'ORGANIZER', eventId,
+    });
+
+    return reply.send({ success: true, message: 'Event marked as sold out. New bookings blocked.' });
+  }
+
+  /**
+   * POST /organizer/events/:eventId/reopen-booking
+   * Reopen booking for a manually closed/sold-out event.
+   */
+  async reopenBooking(request: FastifyRequest, reply: FastifyReply) {
+    const organizerId = request.user!.id;
+    const { eventId } = request.params as { eventId: string };
+
+    try {
+      await getOrganizerAssignment(organizerId, eventId);
+    } catch {
+      return reply.status(403).send({ error: 'Not assigned to this event' });
+    }
+
+    const event = await prisma.event.findUnique({
+      where: { id: eventId },
+      include: { ticketTypes: { select: { id: true, capacity: true, soldCount: true } } },
+    });
+    if (!event) return reply.status(404).send({ error: 'Event not found' });
+
+    // Check remaining capacity across all ticket types
+    const totalRemaining = event.ticketTypes.reduce((sum, tt) => {
+      if (tt.capacity <= 0) return sum;
+      return sum + Math.max(0, tt.capacity - tt.soldCount);
+    }, 0);
+
+    const hasCapacityTypes = event.ticketTypes.some((tt) => tt.capacity > 0);
+    if (hasCapacityTypes && totalRemaining <= 0) {
+      return reply.status(409).send({
+        error: 'Booking cannot be reopened because no tickets remain.',
+        remainingCapacity: 0,
+      });
+    }
+
+    if (event.status !== 'PUBLISHED') {
+      return reply.status(409).send({ error: 'Event must be PUBLISHED to reopen booking.' });
+    }
+
+    if (event.salesEndAt && event.salesEndAt < new Date()) {
+      return reply.status(409).send({
+        error: 'Booking cannot be reopened because the booking period has ended.',
+      });
+    }
+
+    if (!event.bookingClosed && !event.salesPaused) {
+      return reply.send({ success: true, message: 'Booking is already open.' });
+    }
+
+    await prisma.event.update({ where: { id: eventId }, data: { bookingClosed: false, salesPaused: false } });
+
+    await writeAuditLog('EVENT_REOPENED', 'Event', eventId, {
+      actorId: request.user!.id, actorRole: 'ORGANIZER', eventId,
+    });
+
+    return reply.send({ success: true, message: 'Booking reopened. Public status set to LIVE.' });
+  }
+
   // ── Organizer Dashboard Stats (event-scoped, no global data) ──
 
   /**
@@ -519,6 +609,26 @@ export class OrganizerController {
             data: { status: 'REJECTED', rejectionReason: body.reason, reviewedAt: new Date(), reviewedById: organizerId },
           });
         }
+
+        // Release reserved capacity that was consumed at booking creation
+        const attendees = await tx.orderAttendee.findMany({
+          where: { orderId: order.id },
+          select: { ticketTypeId: true },
+        });
+        const typeCounts = new Map<string, number>();
+        for (const a of attendees) {
+          typeCounts.set(a.ticketTypeId, (typeCounts.get(a.ticketTypeId) || 0) + 1);
+        }
+        for (const [ticketTypeId, quantity] of typeCounts) {
+          const tt = await tx.ticketType.findUnique({ where: { id: ticketTypeId } });
+          if (tt) {
+            await tx.ticketType.update({
+              where: { id: ticketTypeId },
+              data: { soldCount: Math.max(0, tt.soldCount - quantity) },
+            });
+          }
+        }
+
         await tx.order.update({ where: { id: order.id }, data: { status: 'REJECTED' } });
       });
 

@@ -3,11 +3,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { getTicket } from '@/lib/api-client';
+import { getTicket, api } from '@/lib/api-client';
 import { formatDate, formatTime } from '@/lib/dates';
-
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:10000/api/v1';
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   CONFIRMED: { label: 'Valid for entry', color: 'text-success' },
@@ -32,24 +29,16 @@ export default function TicketDetailPage() {
       const t = await getTicket(ticketNumber);
       setTicket(t);
 
-      // Load render image: fetch as blob for cookie-based auth (cross-origin)
-      const renderEndpoint = `${API_BASE_URL}/tickets/${encodeURIComponent(ticketNumber)}/render`;
+      // Load render image as Blob via the canonical API client
       try {
-        const res = await fetch(renderEndpoint, { credentials: 'include' });
-        if (res.ok) {
-          const blob = await res.blob();
-          setRenderUrl(URL.createObjectURL(blob));
+        const result = await api.fetchBinary(`/tickets/${encodeURIComponent(ticketNumber)}/render`);
+        if (!result.contentType.startsWith('image/')) {
+          setRenderError('Unexpected response type from render endpoint.');
         } else {
-          // Show meaningful error from backend
-          try {
-            const errData = await res.json();
-            setRenderError(errData.error || 'Render failed');
-          } catch {
-            setRenderError(`Render failed (${res.status})`);
-          }
+          setRenderUrl(URL.createObjectURL(result.blob));
         }
       } catch (fetchErr: any) {
-        setRenderError(fetchErr.message || 'Network error');
+        setRenderError(fetchErr.message || 'Render failed. Your ticket may need QR migration — contact admin.');
       }
     } catch (err: any) {
       setError(err.message || 'Ticket not found');
@@ -69,20 +58,32 @@ export default function TicketDetailPage() {
     if (!ticketNumber) return;
     setDownloading(true);
     try {
-      const endpoint = `${API_BASE_URL}/tickets/${encodeURIComponent(ticketNumber)}/download`;
-      const res = await fetch(endpoint, { credentials: 'include' });
-      if (!res.ok) throw new Error('Download failed');
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
+      const result = await api.fetchBinary(`/tickets/${encodeURIComponent(ticketNumber)}/download`);
+      if (result.contentType !== 'application/pdf') {
+        throw new Error('Unexpected download format');
+      }
+      // Extract filename from Content-Disposition or use ticket number
+      let filename = `${ticketNumber}.pdf`;
+      if (result.contentDisposition) {
+        const match = result.contentDisposition.match(/filename="?([^";]+)"?/);
+        if (match) filename = match[1];
+      }
+      const url = URL.createObjectURL(result.blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${ticketNumber}.pdf`;
+      a.download = filename;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch (err: any) {
       console.error('Download failed:', err);
+      // Show inline error instead of silent fail
+      const downloadBtn = document.getElementById('download-pdf-btn');
+      if (downloadBtn) {
+        downloadBtn.textContent = 'Download failed — try again';
+        setTimeout(() => { downloadBtn.textContent = 'Download PDF'; }, 3000);
+      }
     } finally {
       setDownloading(false);
     }
@@ -118,6 +119,8 @@ export default function TicketDetailPage() {
   const statusInfo = STATUS_LABELS[ticket.status] || STATUS_LABELS.EXPIRED;
   const isActive = ticket.status === 'CONFIRMED';
   const isCheckedIn = ticket.status === 'CHECKED_IN' || !!ticket.checkIn;
+  const qrMissing = renderError?.toLowerCase().includes('qr') || renderError?.toLowerCase().includes('migration');
+  const pdfUnavailable = !isActive || qrMissing;
 
   return (
     <div className="mx-auto max-w-lg space-y-4 py-8">
@@ -161,13 +164,13 @@ export default function TicketDetailPage() {
           // Fallback: show a minimal error with retry option
           <div className="flex flex-col items-center justify-center px-8 py-16 text-center">
             <span className="text-4xl mb-3">🎫</span>
-            <p className="text-sm font-medium text-white">Ticket unavailable</p>
+            <p className="text-sm font-medium text-white">Your ticket could not be loaded</p>
             <p className="mt-1 text-xs text-text-muted max-w-xs">{renderError}</p>
             <button
               onClick={() => { setRenderError(null); setRenderUrl(null); loadTicket(); }}
               className="mt-4 rounded-lg bg-primary px-4 py-2 text-xs font-medium text-white hover:bg-primary-hover transition-colors"
             >
-              Retry
+              Retry Preview
             </button>
           </div>
         ) : (
@@ -177,26 +180,34 @@ export default function TicketDetailPage() {
         )}
       </div>
 
-      {/* ── Download button (only for active tickets) ────── */}
-      <button
-        onClick={handleDownload}
-        disabled={!isActive || downloading}
-        className="w-full inline-flex items-center justify-center gap-2 h-12 rounded-xl bg-primary px-5 text-sm font-medium text-white hover:bg-primary-hover transition-colors disabled:opacity-50 shadow-lg shadow-primary/20"
-      >
-        {downloading ? (
-          <>
-            <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-            Downloading...
-          </>
-        ) : (
-          <>
-            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
-            </svg>
-            Download PDF
-          </>
-        )}
-      </button>
+      {/* ── Download button ──────────────────────────────── */}
+      {qrMissing ? (
+        <div className="rounded-lg border border-warning/20 bg-warning/5 p-3 text-center">
+          <p className="text-xs text-warning font-medium">PDF download unavailable</p>
+          <p className="text-xs text-text-muted mt-0.5">This ticket has not been fully prepared yet. Contact an administrator to complete setup.</p>
+        </div>
+      ) : (
+        <button
+          id="download-pdf-btn"
+          onClick={handleDownload}
+          disabled={!isActive || downloading}
+          className="w-full inline-flex items-center justify-center gap-2 h-12 rounded-xl bg-primary px-5 text-sm font-medium text-white hover:bg-primary-hover transition-colors disabled:opacity-50 shadow-lg shadow-primary/20"
+        >
+          {downloading ? (
+            <>
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+              Downloading...
+            </>
+          ) : (
+            <>
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+              </svg>
+              Download PDF
+            </>
+          )}
+        </button>
+      )}
 
       {/* ── Ticket number (minimal) ──────────────────────── */}
       <p className="text-center text-xs text-text-muted font-mono">
