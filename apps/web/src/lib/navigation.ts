@@ -28,6 +28,7 @@ export const ADMIN_NAV: NavItem[] = [
   { label: 'Overview', href: '/admin' },
   { label: 'Events', href: '/admin/events' },
   { label: 'Orders', href: '/admin/orders' },
+  { label: 'Tickets', href: '/admin/tickets' },
   { label: 'Complimentary', href: '/admin/complimentary' },
   { label: 'Check-in', href: '/admin/check-in' },
   { label: 'Users', href: '/admin/users' },
@@ -50,6 +51,7 @@ export const ORGANIZER_NAV: NavItem[] = [
 
 export function isActive(href: string, pathname: string): boolean {
   if (href === '/admin') return pathname === '/admin';
+  if (href === '/admin/tickets') return pathname === '/admin/tickets' || pathname.startsWith('/admin/tickets/');
   if (href === '/my-bookings') return pathname === '/my-bookings' || pathname.startsWith('/my-bookings/');
   if (href === '/tickets') return pathname === '/tickets' || pathname.startsWith('/tickets/');
   if (href === '/dashboard') return pathname === '/dashboard';

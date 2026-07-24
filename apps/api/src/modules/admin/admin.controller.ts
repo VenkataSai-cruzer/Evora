@@ -910,6 +910,90 @@ export class AdminController {
   // ── Tickets ────────────────────────────────────────────────
 
   /**
+   * GET /admin/tickets
+   * Paginated list of all tickets with filters.
+   */
+  async listTickets(request: FastifyRequest, _reply: FastifyReply) {
+    const query = request.query as {
+      eventId?: string;
+      status?: string;
+      category?: string;
+      search?: string;
+      page?: string;
+      limit?: string;
+    };
+    const page = parseInt(query.page || '1', 10);
+    const limit = parseInt(query.limit || '30', 10);
+    const skip = (page - 1) * limit;
+
+    const where: Record<string, unknown> = {};
+    if (query.eventId) where.eventId = query.eventId;
+    if (query.status) where.status = query.status;
+    if (query.category) where.ticketCategory = query.category;
+    if (query.search) {
+      where.OR = [
+        { ticketNumber: { contains: query.search, mode: 'insensitive' } },
+        { attendeeName: { contains: query.search, mode: 'insensitive' } },
+        { attendeeEmail: { contains: query.search, mode: 'insensitive' } },
+      ];
+    }
+
+    const [tickets, total] = await Promise.all([
+      prisma.ticket.findMany({
+        where,
+        include: {
+          event: { select: { id: true, title: true, slug: true, startAt: true, venueName: true } },
+          ticketType: { select: { name: true, price: true } },
+          order: { select: { orderNumber: true, status: true } },
+          attendee: { select: { attendeeName: true } },
+          checkIn: { select: { checkedInAt: true, result: true } },
+          issuedBy: { select: { name: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      prisma.ticket.count({ where }),
+    ]);
+
+    return { tickets, total, page, limit };
+  }
+
+  /**
+   * GET /admin/tickets/:ticketNumber
+   * Full detail for a single ticket.
+   */
+  async getTicket(request: FastifyRequest, reply: FastifyReply) {
+    const { ticketNumber } = request.params as { ticketNumber: string };
+
+    const ticket = await prisma.ticket.findUnique({
+      where: { ticketNumber },
+      include: {
+        event: {
+          select: {
+            id: true, title: true, slug: true, posterObjectKey: true,
+            startAt: true, endAt: true, venueName: true, venueAddress: true,
+            mapUrl: true, status: true, organizerId: true,
+            organizer: { select: { id: true, name: true } },
+          },
+        },
+        ticketType: { select: { id: true, name: true, price: true, currency: true } },
+        order: { select: { id: true, orderNumber: true, status: true, total: true } },
+        attendee: { select: { id: true, attendeeName: true, attendeeEmail: true } },
+        checkIn: { select: { checkedInAt: true, result: true, scannerId: true, gateName: true } },
+        user: { select: { id: true, name: true, email: true } },
+        issuedBy: { select: { name: true } },
+      },
+    });
+
+    if (!ticket) {
+      return reply.status(404).send({ error: 'Ticket not found' });
+    }
+
+    return { ticket };
+  }
+
+  /**
    * POST /admin/tickets/:ticketNumber/cancel
    * Cancel (soft-delete) any ticket by ticket number.
    *

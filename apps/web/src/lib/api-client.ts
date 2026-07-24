@@ -877,6 +877,93 @@ export interface UtrCheckResponse {
   submissionCount: number;
 }
 
+// ── Admin Tickets ────────────────────────────────────────
+
+export interface AdminTicketListItem {
+  id: string;
+  ticketNumber: string;
+  status: string;
+  attendeeName: string;
+  attendeeEmail: string;
+  attendeePhone: string;
+  ticketCategory: string;
+  source: string;
+  visibility: string;
+  createdAt: string;
+  event: { id: string; title: string; slug: string; startAt: string; venueName: string };
+  ticketType: { name: string; price: number } | null;
+  order: { orderNumber: string; status: string } | null;
+  attendee: { attendeeName: string } | null;
+  checkIn: { checkedInAt: string; result: string } | null;
+  issuedBy: { name: string } | null;
+}
+
+export interface AdminTicketDetailResponse {
+  id: string;
+  ticketNumber: string;
+  status: string;
+  userId: string;
+  eventId: string;
+  orderId: string | null;
+  ticketTypeId: string;
+  attendeeName: string;
+  attendeeEmail: string;
+  attendeePhone: string;
+  ticketCategory: string;
+  source: string;
+  visibility: string;
+  pricePaid: number;
+  issuedAt: string;
+  checkedInAt: string | null;
+  gateName: string | null;
+  createdAt: string;
+  event: {
+    id: string; title: string; slug: string; posterObjectKey: string | null;
+    startAt: string; endAt: string | null; venueName: string; venueAddress: string | null;
+    status: string; organizerId: string;
+    organizer: { id: string; name: string } | null;
+  };
+  ticketType: { id: string; name: string; price: number; currency: string } | null;
+  order: { id: string; orderNumber: string; status: string; total: number } | null;
+  attendee: { id: string; attendeeName: string; attendeeEmail: string } | null;
+  checkIn: { checkedInAt: string; result: string; scannerId: string; gateName: string } | null;
+  user: { id: string; name: string; email: string };
+  issuedBy: { name: string } | null;
+}
+
+export interface AdminTicketsListResponse {
+  tickets: AdminTicketListItem[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export async function listAdminTickets(params?: {
+  eventId?: string;
+  status?: string;
+  category?: string;
+  search?: string;
+  page?: number;
+  limit?: number;
+}): Promise<AdminTicketsListResponse> {
+  const searchParams = new URLSearchParams();
+  if (params?.eventId) searchParams.set('eventId', params.eventId);
+  if (params?.status) searchParams.set('status', params.status);
+  if (params?.category) searchParams.set('category', params.category);
+  if (params?.search) searchParams.set('search', params.search);
+  if (params?.page) searchParams.set('page', String(params.page));
+  if (params?.limit) searchParams.set('limit', String(params.limit));
+  const qs = searchParams.toString();
+  return api.get(`/admin/tickets${qs ? `?${qs}` : ''}`);
+}
+
+export async function getAdminTicket(ticketNumber: string): Promise<AdminTicketDetailResponse> {
+  const data = await api.get<{ ticket: AdminTicketDetailResponse }>(`/admin/tickets/${ticketNumber}`);
+  return data.ticket;
+}
+
+// ── Duplicate UTR Check (Phase 4.3A) ────────────────────
+
 export async function checkUtr(utr: string): Promise<UtrCheckResponse> {
   return api.get(`/payments/check-utr/${encodeURIComponent(utr)}`);
 }

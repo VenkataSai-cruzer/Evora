@@ -72,6 +72,8 @@ export async function adminRoutes(app: FastifyInstance) {
   app.patch('/users/:userId/role', controller.updateUserRole.bind(controller));
 
   // ── Tickets ───────────────────────────────────────────────
+  app.get('/tickets', controller.listTickets.bind(controller));
+  app.get('/tickets/:ticketNumber', controller.getTicket.bind(controller));
   app.post('/tickets/:ticketNumber/cancel', controller.cancelTicket.bind(controller));
 
   // ── Audit Logs ───────────────────────────────────────────
