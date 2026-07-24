@@ -120,7 +120,6 @@ export default function TicketDetailPage() {
   const isActive = ticket.status === 'CONFIRMED';
   const isCheckedIn = ticket.status === 'CHECKED_IN' || !!ticket.checkIn;
   const qrMissing = renderError?.toLowerCase().includes('qr') || renderError?.toLowerCase().includes('migration');
-  const pdfUnavailable = !isActive || qrMissing;
 
   return (
     <div className="mx-auto max-w-lg space-y-4 py-8">

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
-import { listAdminTickets, api } from '@/lib/api-client';
+import { listAdminTickets } from '@/lib/api-client';
 import type { AdminTicketListItem } from '@/lib/api-client';
 import { Badge } from '@/components/ui/Badge';
 import { Input } from '@/components/ui/Input';
