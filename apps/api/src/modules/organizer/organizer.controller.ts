@@ -23,31 +23,6 @@ async function getOrganizerAssignment(organizerId: string, eventId: string) {
   return assignment;
 }
 
-/**
- * Reuse shared reject logic for organizers.
- * Must be called after verifying the organizer is assigned to the order's event.
- */
-async function organizerRejectOrder(
-  tx: any,
-  order: any,
-  organizerId: string,
-  reason: string,
-) {
-  if (order.payments[0]) {
-    await tx.payment.update({ where: { id: order.payments[0].id }, data: { status: 'FAILED' } });
-  }
-  if (order.paymentProof) {
-    await tx.paymentProof.update({
-      where: { orderId: order.id },
-      data: { status: 'REJECTED', rejectionReason: reason, reviewedAt: new Date(), reviewedById: organizerId },
-    });
-  }
-  await tx.order.update({
-    where: { id: order.id },
-    data: { status: 'REJECTED' },
-  });
-}
-
 export class OrganizerController {
   /**
    * GET /organizer/events
@@ -243,6 +218,68 @@ export class OrganizerController {
     };
   }
 
+  // ── Organizer Dashboard Stats (event-scoped, no global data) ──
+
+  /**
+   * GET /organizer/stats
+   * Returns aggregate counts for ONLY the organizer's assigned events.
+   * Never returns platform-wide data.
+   */
+  async getStats(request: FastifyRequest, _reply: FastifyReply) {
+    const organizerId = request.user!.id;
+
+    // Get assigned event IDs
+    const assignments = await prisma.organizerAssignment.findMany({
+      where: { organizerId },
+      select: { eventId: true },
+    });
+    const eventIds = assignments.map((a) => a.eventId);
+
+    if (eventIds.length === 0) {
+      return {
+        totalEvents: 0,
+        liveEvents: 0,
+        pausedEvents: 0,
+        totalOrders: 0,
+        confirmedOrders: 0,
+        totalTickets: 0,
+        checkedInTickets: 0,
+        pendingVerifications: 0,
+      };
+    }
+
+    const [
+      totalEvents,
+      liveEvents,
+      pausedEvents,
+      totalOrders,
+      confirmedOrders,
+      totalTickets,
+      checkedInTickets,
+      pendingVerifications,
+    ] = await Promise.all([
+      prisma.event.count({ where: { id: { in: eventIds } } }),
+      prisma.event.count({ where: { id: { in: eventIds }, status: 'PUBLISHED' } }),
+      prisma.event.count({ where: { id: { in: eventIds }, salesPaused: true } }),
+      prisma.order.count({ where: { eventId: { in: eventIds } } }),
+      prisma.order.count({ where: { eventId: { in: eventIds }, status: 'CONFIRMED' } }),
+      prisma.ticket.count({ where: { eventId: { in: eventIds }, status: { in: ['CONFIRMED', 'CHECKED_IN'] } } }),
+      prisma.ticket.count({ where: { eventId: { in: eventIds }, status: 'CHECKED_IN' } }),
+      prisma.order.count({ where: { eventId: { in: eventIds }, status: { in: ['PENDING_PAYMENT', 'PENDING_VERIFICATION'] } } }),
+    ]);
+
+    return {
+      totalEvents,
+      liveEvents,
+      pausedEvents,
+      totalOrders,
+      confirmedOrders,
+      totalTickets,
+      checkedInTickets,
+      pendingVerifications,
+    };
+  }
+
   // ── Payment Verification (Organizer-scoped) ────────────
 
   /**
@@ -365,10 +402,10 @@ export class OrganizerController {
   }
 
   /**
-   * POST /organizer/verifications/:orderNumber/approve
-   * Approve payment for an order — reuses finalizeApprovedOrder service.
+   * POST /organizer/orders/:orderNumber/approve
+   * Approve payment — organizer-scoped to assigned events.
    */
-  async approveVerification(
+  async approveOrder(
     request: FastifyRequest,
     reply: FastifyReply,
   ) {
@@ -377,7 +414,6 @@ export class OrganizerController {
     const body = request.body as { expectedProofUpdatedAt?: string } | undefined;
 
     try {
-      // Get the order
       const order = await prisma.order.findUnique({
         where: { orderNumber },
         include: { paymentProof: true },
@@ -387,21 +423,16 @@ export class OrganizerController {
 
       // Verify organizer is assigned to the event
       await getOrganizerAssignment(organizerId, order.eventId).catch(() => {
-        throw Object.assign(new Error('Not assigned to this event'), {
-          statusCode: 403,
-        });
+        throw Object.assign(new Error('Not assigned to this event'), { statusCode: 403 });
       });
 
-      // Optimistic concurrency: check payment proof hasn't been reviewed by another admin
       if (order.paymentProof && order.paymentProof.status !== 'PENDING') {
         return reply.status(409).send({
           error: 'Conflict: This payment has already been reviewed.',
           currentStatus: order.paymentProof.status,
-          reviewedAt: order.paymentProof.reviewedAt,
         });
       }
 
-      // Optional: verify the client's expected updatedAt matches
       if (
         body?.expectedProofUpdatedAt &&
         order.paymentProof &&
@@ -412,8 +443,6 @@ export class OrganizerController {
         });
       }
 
-      // PaymentProof status is now updated INSIDE the finalization transaction
-      // for atomic consistency — no separate pre-update needed here.
       const result = await finalizeApprovedOrder(
         order.id,
         organizerId,
@@ -441,10 +470,10 @@ export class OrganizerController {
   }
 
   /**
-   * POST /organizer/verifications/:orderNumber/reject
-   * Reject payment — organizer must provide a reason.
+   * POST /organizer/orders/:orderNumber/reject
+   * Reject payment — organizer-scoped to assigned events.
    */
-  async rejectVerification(
+  async rejectOrder(
     request: FastifyRequest,
     reply: FastifyReply,
   ) {
@@ -460,13 +489,8 @@ export class OrganizerController {
       const order = await prisma.order.findUnique({
         where: { orderNumber },
         include: {
-          user: true,
           event: true,
-          payments: {
-            where: { status: 'PENDING' },
-            orderBy: { createdAt: 'desc' },
-            take: 1,
-          },
+          payments: { where: { status: 'PENDING' }, orderBy: { createdAt: 'desc' }, take: 1 },
           paymentProof: true,
         },
       });
@@ -475,9 +499,7 @@ export class OrganizerController {
 
       // Verify organizer is assigned to the event
       await getOrganizerAssignment(organizerId, order.eventId).catch(() => {
-        throw Object.assign(new Error('Not assigned to this event'), {
-          statusCode: 403,
-        });
+        throw Object.assign(new Error('Not assigned to this event'), { statusCode: 403 });
       });
 
       const validStates = ['PENDING_PAYMENT', 'PENDING_VERIFICATION'];
@@ -488,29 +510,28 @@ export class OrganizerController {
       }
 
       await prisma.$transaction(async (tx) => {
-        await organizerRejectOrder(tx, order, organizerId, body.reason);
+        if (order.payments[0]) {
+          await tx.payment.update({ where: { id: order.payments[0].id }, data: { status: 'FAILED' } });
+        }
+        if (order.paymentProof) {
+          await tx.paymentProof.update({
+            where: { orderId: order.id },
+            data: { status: 'REJECTED', rejectionReason: body.reason, reviewedAt: new Date(), reviewedById: organizerId },
+          });
+        }
+        await tx.order.update({ where: { id: order.id }, data: { status: 'REJECTED' } });
       });
 
       await writeAuditLog('PAYMENT_REJECTED', 'Order', order.id, {
-        actorId: organizerId,
-        actorRole: 'ORGANIZER',
-        eventId: order.eventId,
-        ipAddress: request.ip,
-        metadata: {
-          reason: body.reason,
-          orderNumber: order.orderNumber,
-        },
+        actorId: organizerId, actorRole: 'ORGANIZER', eventId: order.eventId,
+        ipAddress: request.ip, metadata: { reason: body.reason, orderNumber: order.orderNumber },
       });
 
-      // Email notifications disabled until verified domain is set up.
       sendTelegramAdminAlert(
         `❌ <b>Payment Rejected</b> (by Organizer)\nOrder: <code>${order.orderNumber}</code>\nReason: ${body.reason}`,
       ).catch(console.error);
 
-      return reply.send({
-        success: true,
-        message: `Payment rejected: ${body.reason} — user can resubmit proof.`,
-      });
+      return reply.send({ success: true, message: `Payment rejected: ${body.reason} — user can resubmit proof.` });
     } catch (error: any) {
       const statusCode = error.statusCode || 400;
       const message = error.message || 'Unknown error';
@@ -519,7 +540,7 @@ export class OrganizerController {
   }
 
   /**
-   * POST /organizer/verifications/:orderNumber/request-resubmission
+   * POST /organizer/orders/:orderNumber/request-resubmission
    */
   async requestVerificationResubmission(
     request: FastifyRequest,

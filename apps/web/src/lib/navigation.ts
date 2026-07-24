@@ -38,6 +38,16 @@ export const ADMIN_NAV: NavItem[] = [
   { label: 'Settings', href: '/admin/settings' },
 ];
 
+export const ORGANIZER_NAV: NavItem[] = [
+  { label: 'Overview', href: '/organizer' },
+  { label: 'My Events', href: '/organizer/events' },
+  { label: 'Orders', href: '/organizer/orders' },
+  { label: 'Attendees', href: '/organizer/attendees' },
+  { label: 'Check-in', href: '/organizer/check-in' },
+  { label: 'Exports', href: '/organizer/exports' },
+  { label: 'Account', href: '/organizer/account' },
+];
+
 export function isActive(href: string, pathname: string): boolean {
   if (href === '/admin') return pathname === '/admin';
   if (href === '/my-bookings') return pathname === '/my-bookings' || pathname.startsWith('/my-bookings/');
