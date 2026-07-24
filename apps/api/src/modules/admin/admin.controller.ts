@@ -346,14 +346,24 @@ export class AdminController {
     const skip = (page - 1) * limit;
 
     const where: Record<string, unknown> = {};
-    // Default: show BANK_TRANSFER orders with PENDING_PAYMENT or PENDING_VERIFICATION
     if (query.status) {
       where.status = query.status;
     } else {
+      // Default: show orders pending payment or verification
       where.status = { in: ['PENDING_PAYMENT', 'PENDING_VERIFICATION'] };
     }
-    // Filter by payment method (default to BANK_TRANSFER for the verification queue)
-    where.paymentMethod = query.paymentMethod || 'BANK_TRANSFER';
+
+    // Only filter by payment method for the verification queue (PENDING statuses).
+    // For CONFIRMED, REJECTED, CANCELLED, COMPLIMENTARY, etc., show ALL payment methods.
+    const queueStatuses = ['PENDING_PAYMENT', 'PENDING_VERIFICATION'];
+    const currentStatus = query.status || '';
+    if (queueStatuses.includes(currentStatus) || (!query.status)) {
+      where.paymentMethod = query.paymentMethod || 'BANK_TRANSFER';
+    }
+    // Explicit COMPLIMENTARY filter
+    if (currentStatus === 'COMPLIMENTARY') {
+      where.paymentMethod = 'COMPLIMENTARY';
+    }
     if (query.eventId) where.eventId = query.eventId;
 
     const [orders, total] = await Promise.all([
@@ -833,6 +843,93 @@ export class AdminController {
         unread: unreadMessages,
       },
     };
+  }
+
+  /**
+   * GET /admin/tickets/export.csv
+   * Export tickets as CSV with the same filters as listTickets.
+   */
+  async exportTicketsCsv(request: FastifyRequest, reply: FastifyReply) {
+    const query = request.query as {
+      eventId?: string;
+      status?: string;
+      category?: string;
+      search?: string;
+    };
+
+    const where: Record<string, unknown> = {};
+    if (query.eventId) where.eventId = query.eventId;
+    if (query.status) where.status = query.status;
+    if (query.category) where.ticketCategory = query.category;
+    if (query.search) {
+      where.OR = [
+        { ticketNumber: { contains: query.search, mode: 'insensitive' } },
+        { attendeeName: { contains: query.search, mode: 'insensitive' } },
+        { attendeeEmail: { contains: query.search, mode: 'insensitive' } },
+      ];
+    }
+
+    const tickets = await prisma.ticket.findMany({
+      where,
+      include: {
+        event: { select: { title: true } },
+        ticketType: { select: { name: true } },
+        order: { select: { orderNumber: true } },
+        checkIn: { select: { checkedInAt: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    // CSV header
+    const headers = [
+      'Ticket Number',
+      'Attendee Name',
+      'Email',
+      'Phone',
+      'Event',
+      'Ticket Type',
+      'Category',
+      'Order Number',
+      'Source',
+      'Status',
+      'Issued At',
+      'Checked In At',
+    ];
+
+    // CSV escape helper (same as exportOrdersCsv)
+    const esc = (v: unknown): string => {
+      const s = String(v ?? '');
+      const dangerous = /^[=+\-@]/.test(s);
+      const needsQuotes = /[,"\n\r]/.test(s) || dangerous;
+      const escaped = s.replace(/"/g, '""');
+      const final = dangerous ? `'${escaped}` : escaped;
+      return needsQuotes ? `"${final}"` : final;
+    };
+
+    const headerLine = headers.join(',') + '\n';
+    const rows = tickets.map((t) =>
+      [
+        t.ticketNumber,
+        t.attendeeName,
+        t.attendeeEmail,
+        t.attendeePhone ? `="${t.attendeePhone}"` : '',
+        t.event.title,
+        t.ticketType?.name || '',
+        t.ticketCategory,
+        t.order?.orderNumber || '',
+        t.source,
+        t.status,
+        t.createdAt.toISOString(),
+        t.checkedInAt?.toISOString() || '',
+      ].map(esc).join(','),
+    );
+
+    const csvContent = '\uFEFF' + headerLine + rows.join('\n');
+
+    reply.header('Content-Type', 'text/csv; charset=utf-8');
+    reply.header('Content-Disposition', 'attachment; filename="tickets-export.csv"');
+    reply.header('Cache-Control', 'no-cache');
+    return reply.send(csvContent);
   }
 
   // ── Audit Logs ────────────────────────────────────────────

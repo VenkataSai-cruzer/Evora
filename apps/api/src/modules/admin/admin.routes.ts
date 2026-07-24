@@ -73,6 +73,7 @@ export async function adminRoutes(app: FastifyInstance) {
 
   // ── Tickets ───────────────────────────────────────────────
   app.get('/tickets', controller.listTickets.bind(controller));
+  app.get('/tickets/export.csv', controller.exportTicketsCsv.bind(controller));
   app.get('/tickets/:ticketNumber', controller.getTicket.bind(controller));
   app.post('/tickets/:ticketNumber/cancel', controller.cancelTicket.bind(controller));
 

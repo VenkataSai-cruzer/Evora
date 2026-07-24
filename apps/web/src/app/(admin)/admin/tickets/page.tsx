@@ -2,12 +2,14 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
-import { listAdminTickets } from '@/lib/api-client';
+import { listAdminTickets, api } from '@/lib/api-client';
 import type { AdminTicketListItem } from '@/lib/api-client';
 import { Badge } from '@/components/ui/Badge';
 import { Input } from '@/components/ui/Input';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { formatDate } from '@/lib/dates';
+
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:10000/api/v1';
 
 const STATUS_COLORS: Record<string, string> = {
   CONFIRMED: 'success',
@@ -51,7 +53,37 @@ export default function AdminTicketsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold text-white">Tickets</h1>
-        <p className="text-sm text-text-muted">{total} total</p>
+        <div className="flex items-center gap-3">
+          <p className="text-sm text-text-muted">{total} total</p>
+          <button
+            onClick={async () => {
+              try {
+                const params = new URLSearchParams();
+                if (search) params.set('search', search);
+                if (statusFilter) params.set('status', statusFilter);
+                if (categoryFilter) params.set('category', categoryFilter);
+                const url = `${API_BASE}/admin/tickets/export.csv?${params.toString()}`;
+                const res = await fetch(url, { credentials: 'include' });
+                if (!res.ok) throw new Error('Export failed');
+                const blob = await res.blob();
+                const blobUrl = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = blobUrl;
+                a.download = `tickets-${new Date().toISOString().slice(0, 10)}.csv`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(blobUrl);
+              } catch { /* ignore */ }
+            }}
+            className="inline-flex h-9 items-center gap-2 rounded-lg border border-[var(--color-border)] bg-surface px-4 text-sm font-medium text-text-secondary hover:text-white hover:bg-surface-hover transition-colors"
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+            </svg>
+            Export CSV
+          </button>
+        </div>
       </div>
 
       {/* Filters */}
