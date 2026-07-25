@@ -2,7 +2,18 @@
 
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { flushSync } from 'react-dom';
-import { getSession, logout as apiLogout, setSessionToken, clearCsrfToken } from './api-client';
+import {
+  getSession,
+  logout as apiLogout,
+  setSessionToken,
+  clearCsrfToken,
+  getSavedAccounts,
+  saveAccount,
+  removeAccount as removeSavedAccount,
+  switchToAccount,
+  getSessionToken,
+  type SavedAccount,
+} from './api-client';
 import { useQueryClient } from '@tanstack/react-query';
 
 export interface AuthUser {
@@ -26,6 +37,12 @@ interface AuthContextValue {
    * and the user is available immediately — no race condition with navigation.
    */
   loginAs: (_user: AuthUser) => void;
+  /** Multi-account: list of all saved accounts */
+  accounts: SavedAccount[];
+  /** Switch to a different saved account */
+  switchAccount: (_userId: string) => Promise<void>;
+  /** Remove a saved account */
+  removeSavedAccount: (_userId: string) => void;
 }
 
 const AuthContext = createContext<AuthContextValue>({
@@ -35,6 +52,9 @@ const AuthContext = createContext<AuthContextValue>({
   signOut: async () => {},
   switchWorkspace: async () => {},
   loginAs: () => {},
+  accounts: [],
+  switchAccount: async () => {},
+  removeSavedAccount: () => {},
 });
 
 export function useAuth(): AuthContextValue {
@@ -190,8 +210,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
    * Set the authenticated user directly from a login/register response.
    * This avoids the race condition between refresh() (which queues async state updates)
    * and router.replace() (which navigates immediately), and eliminates an extra API call.
+   * Also saves the account for multi-account switching.
    */
   const loginAs = useCallback((authUser: AuthUser) => {
+    const token = getSessionToken();
+    if (token) {
+      saveAccount({
+        userId: authUser.id,
+        name: authUser.name,
+        email: authUser.email,
+        role: authUser.role,
+        sessionToken: token,
+        lastUsedAt: Date.now(),
+      });
+    }
     // flushSync ensures React commits the state update BEFORE navigation happens.
     // Without this, router.replace() in the login page would navigate before
     // the AuthContext value updates, causing AuthGuard to see stale null user.
@@ -202,8 +234,55 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     broadcast('LOGGED_IN');
   }, []);
 
+  /** List of saved accounts for multi-account switching. */
+  const [accounts, setAccounts] = useState<SavedAccount[]>([]);
+
+  // Refresh accounts list whenever user changes
+  useEffect(() => {
+    setAccounts(user ? getSavedAccounts() : []);
+  }, [user]);
+
+  /** Switch to a different saved account by userId. */
+  const switchAccount = useCallback(async (userId: string) => {
+    const account = switchToAccount(userId);
+    if (account) {
+      setLoading(true);
+      try {
+        const session = await getSession();
+        if (session) {
+          setUser({
+            id: session.id,
+            name: session.name,
+            email: session.email,
+            role: session.role,
+            allowedRoles: (session as any).allowedRoles,
+            activeRole: (session as any).activeRole,
+          });
+          queryClient.clear();
+        } else {
+          // Session expired — remove this account
+          removeSavedAccount(userId);
+          setUser(null);
+        }
+      } catch {
+        setUser(null);
+      } finally {
+        setLoading(false);
+      }
+    }
+  }, [queryClient]);
+
+  /** Remove a saved account. */
+  const handleRemoveAccount = useCallback((userId: string) => {
+    removeSavedAccount(userId);
+    setAccounts(prev => prev.filter(a => a.userId !== userId));
+  }, []);
+
   return (
-    <AuthContext.Provider value={{ user, loading, refresh, signOut, switchWorkspace, loginAs }}>
+    <AuthContext.Provider value={{
+      user, loading, refresh, signOut, switchWorkspace, loginAs,
+      accounts, switchAccount, removeSavedAccount: handleRemoveAccount,
+    }}>
       {children}
     </AuthContext.Provider>
   );

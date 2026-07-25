@@ -37,8 +37,24 @@ export class ApiClientError extends Error {
 // On login, the backend returns a sessionToken in the response body.
 // The frontend stores it here and sends it as X-Session-Token on every request.
 // The backend middleware checks both cookie AND header.
+//
+// Multi-account support: We store multiple accounts in localStorage,
+// each with their own session token. The user can switch between them
+// like Gmail/Google account switching.
 
 let sessionToken: string | null = null;
+
+const SAVED_ACCOUNTS_KEY = 'evora_saved_accounts';
+
+/** A saved account with its own session token. */
+export interface SavedAccount {
+  userId: string;
+  name: string;
+  email: string;
+  role: string;
+  sessionToken: string;
+  lastUsedAt: number;
+}
 
 /** Set the session token after successful login. */
 export function setSessionToken(token: string | null): void {
@@ -48,6 +64,51 @@ export function setSessionToken(token: string | null): void {
 /** Get the current session token (for auth provider). */
 export function getSessionToken(): string | null {
   return sessionToken;
+}
+
+/** Get all saved accounts from localStorage. */
+export function getSavedAccounts(): SavedAccount[] {
+  try {
+    const raw = localStorage.getItem(SAVED_ACCOUNTS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Save a new account (or update existing by userId). */
+export function saveAccount(account: SavedAccount): void {
+  try {
+    const accounts = getSavedAccounts();
+    const idx = accounts.findIndex(a => a.userId === account.userId);
+    if (idx >= 0) {
+      accounts[idx] = { ...account, lastUsedAt: Date.now() };
+    } else {
+      accounts.push({ ...account, lastUsedAt: Date.now() });
+    }
+    localStorage.setItem(SAVED_ACCOUNTS_KEY, JSON.stringify(accounts));
+  } catch { /* storage unavailable */ }
+}
+
+/** Remove an account by userId. */
+export function removeAccount(userId: string): void {
+  try {
+    const accounts = getSavedAccounts().filter(a => a.userId !== userId);
+    localStorage.setItem(SAVED_ACCOUNTS_KEY, JSON.stringify(accounts));
+  } catch { /* storage unavailable */ }
+}
+
+/** Switch to a saved account — sets its session token as active. */
+export function switchToAccount(userId: string): SavedAccount | null {
+  const accounts = getSavedAccounts();
+  const account = accounts.find(a => a.userId === userId);
+  if (account) {
+    sessionToken = account.sessionToken;
+    // Update last used timestamp
+    saveAccount(account);
+    return account;
+  }
+  return null;
 }
 
 // ── CSRF Token handling ─────────────────────────────────
@@ -288,7 +349,7 @@ export async function register(data: {
   name: string;
   email: string;
   password: string;
-}): Promise<{ user: SessionUser; csrfToken: string }> {
+}): Promise<{ user: SessionUser; csrfToken: string; sessionToken?: string }> {
   return api.post('/auth/register', data);
 }
 

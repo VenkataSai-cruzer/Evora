@@ -77,6 +77,7 @@ export class AuthController {
     return reply.status(201).send({
       user: { ...user, allowedRoles },
       csrfToken,
+      sessionToken,
     });
   }
 

@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { register } from '@/lib/api-client';
+import { register, setSessionToken } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-provider';
 import { z } from 'zod';
 
@@ -70,6 +70,10 @@ export default function RegisterPage() {
     try {
       const result = await register({ name, email, password });
       if (result.user) {
+        // Store session token for multi-account switching
+        if (result.sessionToken) {
+          setSessionToken(result.sessionToken);
+        }
         loginAs({
           id: result.user.id,
           name: result.user.name,
