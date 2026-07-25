@@ -8,6 +8,7 @@ on:
 
 env:
   NODE_VERSION: '20'
+  HUSKY: '0'
 
 jobs:
   quality:
@@ -27,9 +28,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Generate Prisma client
-        run: npx prisma generate --schema=../api/prisma/schema.prisma
-        working-directory: apps/web
+      - name: Generate Prisma client (API schema)
+        run: npx prisma generate --schema=apps/api/prisma/schema.prisma
+        working-directory: .
 
       - name: TypeScript check
         run: npm run typecheck
@@ -42,6 +43,9 @@ jobs:
 
       - name: Build
         run: npm run build
+        env:
+          NEXT_PUBLIC_API_BASE_URL: https://evora-production-8754.up.railway.app/api/v1
+          HUSKY: '0'
 
   security:
     name: Security Audit

@@ -1,0 +1,27 @@
+# ──────────────────────────────────────────────────────────
+# Railway configuration for 7 NOTES / Evora API
+#
+# Service: Backend API (Fastify + Prisma + PostgreSQL)
+# Platform: Railway
+# Frontend: Cloudflare Workers (deployed separately via GitHub Actions)
+# Database: Supabase PostgreSQL (external)
+#
+# Railway Dashboard URL:
+#   https://railway.app/project/evora-production
+#
+# Live API URL:
+#   https://evora-production-8754.up.railway.app
+# ──────────────────────────────────────────────────────────
+
+[build]
+# Run from repo root — monorepo with apps/api
+builder = "nixpacks"
+buildCommand = "cd apps/api && npm install && npx prisma generate --schema=prisma/schema.prisma && npm run build"
+
+[deploy]
+# Migrate DB then start API server
+startCommand = "cd apps/api && npx prisma migrate deploy --schema=prisma/schema.prisma && node dist/server.js"
+healthcheckPath = "/api/v1/health"
+healthcheckTimeout = 60
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
