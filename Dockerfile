@@ -45,6 +45,7 @@ COPY --from=builder /app/apps/api/package*.json ./apps/api/
 COPY --from=builder /app/apps/api/dist ./apps/api/dist
 COPY --from=builder /app/apps/api/prisma ./apps/api/prisma
 COPY --from=builder /app/apps/api/assets ./apps/api/assets
+COPY --from=builder /app/apps/api/scripts ./apps/api/scripts
 
 EXPOSE 10000
 
