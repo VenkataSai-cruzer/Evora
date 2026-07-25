@@ -7,16 +7,11 @@
 # buildCommand is empty because CMD in Dockerfile handles startup
 
 [deploy]
-# Prisma uses `directUrl` (env DIRECT_URL) for schema migrations.
-# Railway cannot reach Supabase's direct IPv6 port 5432, so we override
-# DIRECT_URL with the pooler URL (from DATABASE_URL) + connection_limit=1.
-# The pooler on port 6543 handles both app queries and migrations.
-# Set DATABASE_URL to Supabase pooler connection:
-#   postgresql://postgres.REF:PASSWORD@aws-0-region.pooler.supabase.com:6543/postgres
-#
-# Prisma migration engine uses `directUrl` (env DIRECT_URL) for migrations,
-# not `url` (env DATABASE_URL). Override DIRECT_URL to use the pooler with
-# connection_limit=1 to avoid exhausting the pooler's 15-connection limit.
+# Prisma migration engine reads `directUrl` from the schema, so we must
+# override DIRECT_URL (not DATABASE_URL). Railway cannot reach Supabase's
+# direct IPv6 port, so we reuse DATABASE_URL (pooler) with:
+#   connection_limit=1 → avoids exhausting pooler's 15-connection limit
+#   pgbouncer=true     → emits PgBouncer-compatible SQL
 releaseCommand = "cd apps/api && DIRECT_URL=\"${DATABASE_URL}?connection_limit=1&pgbouncer=true\" npx prisma migrate deploy --schema=prisma/schema.prisma"
 healthcheckPath = "/api/v1/health"
 healthcheckTimeout = 60
