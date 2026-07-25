@@ -7,12 +7,11 @@
 # buildCommand is empty because CMD in Dockerfile handles startup
 
 [deploy]
-# Prisma migration engine reads `directUrl` from the schema, so we must
-# override DIRECT_URL (not DATABASE_URL). Railway cannot reach Supabase's
-# direct IPv6 port, so we reuse DATABASE_URL (pooler) with:
-#   connection_limit=1 → avoids exhausting pooler's 15-connection limit
-#   pgbouncer=true     → emits PgBouncer-compatible SQL
-releaseCommand = "cd apps/api && DIRECT_URL=\"${DATABASE_URL}?connection_limit=1&pgbouncer=true\" npx prisma migrate deploy --schema=prisma/schema.prisma"
+# Prisma now uses DATABASE_URL for everything (directUrl removed from schema).
+# We override DATABASE_URL with ?pgbouncer=true so the migration engine emits
+# PgBouncer-compatible SQL and minimizes connections through the pooler.
+# Railway cannot reach Supabase's direct port, so all traffic goes via pooler.
+releaseCommand = "cd apps/api && DATABASE_URL=\"${DATABASE_URL}?pgbouncer=true\" npx prisma migrate deploy --schema=prisma/schema.prisma"
 healthcheckPath = "/api/v1/health"
 healthcheckTimeout = 60
 restartPolicyType = "on_failure"
