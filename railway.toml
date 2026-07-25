@@ -1,18 +1,17 @@
 # Railway configuration for Evora API
-# Migrations run in a separate pre-deploy step to avoid
-# competing with the app for Supabase's 15-connection session pool.
+# Node 22 + workspace-aware build
 
 [build]
 builder = "nixpacks"
-buildCommand = "cd apps/api && npm install && npx prisma generate --schema=prisma/schema.prisma && npm run build"
+# Root npm ci installs ALL workspace deps including devDeps needed for tsc.
+# We don't run npm install again inside apps/api — that breaks workspace resolution.
+buildCommand = "npx prisma generate --schema=apps/api/prisma/schema.prisma && npm run build:api"
 
 [deploy]
-# Migration removed from start command — runs as releaseCommand instead
-# so it gets its own connection window before the app server starts.
+# Migration runs as releaseCommand (pre-deploy, isolated connection)
+# App starts clean with no migration overhead competing for connections
 startCommand = "cd apps/api && node dist/server.js"
-# releaseCommand runs before every deploy, after build, before start
-# It uses a single connection for migrations only
-releaseCommand = "cd apps/api && DATABASE_URL=\"$DATABASE_URL?connection_limit=1&pool_timeout=30\" npx prisma migrate deploy --schema=prisma/schema.prisma"
+releaseCommand = "cd apps/api && npx prisma migrate deploy --schema=prisma/schema.prisma"
 healthcheckPath = "/api/v1/health"
 healthcheckTimeout = 60
 restartPolicyType = "on_failure"
