@@ -11,8 +11,9 @@
 # We override DATABASE_URL with ?pgbouncer=true so the migration engine emits
 # PgBouncer-compatible SQL and minimizes connections through the pooler.
 # Railway cannot reach Supabase's direct port, so all traffic goes via pooler.
-releaseCommand = "cd apps/api && DATABASE_URL=\"${DATABASE_URL}?pgbouncer=true\" npx prisma migrate deploy --schema=prisma/schema.prisma"
+# The wrapper script preps the URL and runs the migration.
+releaseCommand = "cd apps/api && node scripts/run-migration.mjs"
 healthcheckPath = "/api/v1/health"
 healthcheckTimeout = 60
 restartPolicyType = "on_failure"
-restartPolicyMaxRetries = 3
+restartPolicyMaxRetries = 0  # Avoid cascading connection leaks on retry
