@@ -41,17 +41,22 @@ export class GoogleDriveService {
       // Legacy format: single JSON blob with entire service account key
       try {
         const parsed = JSON.parse(keyJson);
+        if (!parsed.client_email || !parsed.private_key) {
+          throw new Error('GOOGLE_SERVICE_ACCOUNT_KEY_JSON missing client_email or private_key');
+        }
         credentials = {
           client_email: parsed.client_email,
-          private_key: parsed.private_key,
+          // Normalize \n sequences in private key regardless of how Railway stored them
+          private_key: parsed.private_key.replace(/\\n/g, '\n'),
         };
-      } catch {
-        throw new Error('GOOGLE_SERVICE_ACCOUNT_KEY_JSON is not valid JSON');
+      } catch (e: any) {
+        throw new Error(`GOOGLE_SERVICE_ACCOUNT_KEY_JSON parse error: ${e.message}`);
       }
     } else if (projectId && clientEmail && privateKey) {
       // Recommended format: individual env vars
       credentials = {
         client_email: clientEmail,
+        // Railway stores literal \n — replace with real newlines
         private_key: privateKey.replace(/\\n/g, '\n'),
       };
     } else {
@@ -92,26 +97,36 @@ export class GoogleDriveService {
 
   /**
    * Find or create a folder by name under a parent.
+   * For the root folder (no parentId), search all Drive including shared folders.
    */
   private async findOrCreateFolder(
     name: string,
     parentId?: string,
   ): Promise<string> {
     const escapedName = name.replace(/'/g, "\\'");
-    const query = parentId
-      ? `mimeType='application/vnd.google-apps.folder' and name='${escapedName}' and '${parentId}' in parents and trashed=false`
-      : `mimeType='application/vnd.google-apps.folder' and name='${escapedName}' and trashed=false`;
+
+    let query: string;
+    if (parentId) {
+      query = `mimeType='application/vnd.google-apps.folder' and name='${escapedName}' and '${parentId}' in parents and trashed=false`;
+    } else {
+      // Root folder search: look in all drives including shared-with-me
+      query = `mimeType='application/vnd.google-apps.folder' and name='${escapedName}' and trashed=false`;
+    }
 
     const res = await this.drive.files.list({
       q: query,
       fields: 'files(id, name)',
       spaces: 'drive',
+      // includeItemsFromAllDrives needed for shared drives
+      includeItemsFromAllDrives: true,
+      supportsAllDrives: true,
     });
 
     if (res.data.files && res.data.files.length > 0) {
       return res.data.files[0].id!;
     }
 
+    // Only create if no parentId (root) or parentId given
     const folderRes = await this.drive.files.create({
       requestBody: {
         name,
@@ -119,6 +134,7 @@ export class GoogleDriveService {
         parents: parentId ? [parentId] : [],
       },
       fields: 'id',
+      supportsAllDrives: true,
     });
 
     return folderRes.data.id!;
@@ -172,6 +188,7 @@ export class GoogleDriveService {
         body: stream,
       },
       fields: 'id, webViewLink',
+      supportsAllDrives: true,
     });
 
     const fileId = res.data.id!;
