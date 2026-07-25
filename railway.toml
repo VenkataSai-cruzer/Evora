@@ -12,7 +12,10 @@
 # both application queries AND migrations when ?pgbouncer=true is omitted.
 # Set DATABASE_URL to Supabase pooler connection:
 #   postgresql://postgres.REF:PASSWORD@aws-0-region.pooler.supabase.com:6543/postgres
-releaseCommand = "cd apps/api && npx prisma migrate deploy --schema=prisma/schema.prisma"
+#
+# connection_limit=1 prevents Prisma from opening multiple connections and
+# exhausting the pooler's 15-connection limit (EMAXCONNSESSION).
+releaseCommand = "cd apps/api && DATABASE_URL=\"${DATABASE_URL}?connection_limit=1&pgbouncer=true\" npx prisma migrate deploy --schema=prisma/schema.prisma"
 healthcheckPath = "/api/v1/health"
 healthcheckTimeout = 60
 restartPolicyType = "on_failure"
