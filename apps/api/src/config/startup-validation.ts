@@ -38,10 +38,14 @@ function validateEnvironment(): { name: string; status: 'pass' | 'fail'; message
 
 /**
  * Validate database connectivity.
+ * Uses a connection with very short timeout to avoid holding connections
+ * during startup when the migration command may also be running.
  */
 async function validateDatabase(): Promise<{ name: string; status: 'pass' | 'fail'; message?: string }> {
   try {
     await prisma.$queryRaw`SELECT 1`;
+    // Immediately release the connection after the check
+    await prisma.$disconnect();
     return { name: 'database', status: 'pass' };
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unknown error';
