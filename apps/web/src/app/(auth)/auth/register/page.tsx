@@ -16,7 +16,7 @@ const schema = z.object({
 
 export default function RegisterPage() {
   const router = useRouter();
-  const { refresh } = useAuth();
+  const { loginAs } = useAuth();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -33,7 +33,14 @@ export default function RegisterPage() {
     try {
       const result = await register({ name, email, password });
       if (result.user) {
-        await refresh();
+        // Set user immediately from register result — avoids race condition
+        loginAs({
+          id: result.user.id,
+          name: result.user.name,
+          email: result.user.email,
+          role: result.user.role,
+          allowedRoles: (result.user as any).allowedRoles,
+        });
         router.replace('/my-event');
         router.refresh();
       }

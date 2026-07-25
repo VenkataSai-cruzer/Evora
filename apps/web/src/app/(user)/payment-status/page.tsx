@@ -182,7 +182,6 @@ function PaymentStatusContent() {
       {isPendingPayment && (
         <PaymentInstructions
           amount={orderDetail?.total || 0}
-          eventTitle={orderDetail?.event?.title}
         />
       )}
 
