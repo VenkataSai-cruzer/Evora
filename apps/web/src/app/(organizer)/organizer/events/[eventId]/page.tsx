@@ -13,6 +13,7 @@ import {
   updateOrganizerTicketType,
 } from '@/lib/api-client';
 import { formatDate, formatTime } from '@/lib/dates';
+import { CheckInStatsCard } from '@/components/events/CheckInStatsCard';
 
 // ── Inline price editor ──────────────────────────────────────
 function TicketTypeRow({
@@ -281,6 +282,11 @@ export default function OrganizerEventDetailPage() {
           <p className="text-xs text-text-muted mt-0.5">{event.venueAddress}</p>
         )}
       </div>
+
+      {/* ── Check-in Stats (live widget) ───────────────── */}
+      {event.status !== 'DRAFT' && (
+        <CheckInStatsCard apiPath={`/organizer/events/${eventId}/checkin-stats`} pollIntervalMs={15000} />
+      )}
 
       {/* ── Event Controls ─────────────────────────────── */}
       {event.status === 'PUBLISHED' && (

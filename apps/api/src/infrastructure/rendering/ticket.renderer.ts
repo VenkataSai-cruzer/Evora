@@ -70,8 +70,12 @@ export interface TicketRenderData {
   venue: string;
   attendeeName: string;
   ticketType: string;
+  ticketCategory: string;
+  pricePaid: number;
+  organizerName: string;
   ticketNumber: string;
   orderNumber: string;
+  issueDate: string;
   qrPayload: string;
 }
 
@@ -135,7 +139,8 @@ const LAYOUT = {
   venueMaxChars: 55, venueMaxLines: 2, venueLineH: 26,
   dividerOffset: 35,
   attendeeOffset: 35, attendeeNameOffset: 34,
-  badgeOffset: 80, badgeHeight: 34,
+  badgeOffset: 80, badgeHeight: 34, badgeGap: 12,  // gap between badges
+  priceOffsetY: 30,  // extra space for price display below badge
   divider2Offset: 50,
   infoSectionOffset: 35,
   qrPlaceholderX: 530, qrPlaceholderSize: 170,
@@ -154,7 +159,8 @@ function computeQrY(data: TicketRenderData): number {
   const divider1Y = venueStartY + venueLines.length * LAYOUT.venueLineH + LAYOUT.dividerOffset;
   const attendeeSectionY = divider1Y + LAYOUT.attendeeOffset;
   const badgeY = attendeeSectionY + LAYOUT.badgeOffset;
-  const divider2Y = badgeY + LAYOUT.divider2Offset;
+  const priceAreaY = badgeY + LAYOUT.priceOffsetY;
+  const divider2Y = priceAreaY + LAYOUT.divider2Offset;
   const infoSectionY = divider2Y + LAYOUT.infoSectionOffset;
   return infoSectionY - 15;
 }
@@ -162,19 +168,30 @@ function computeQrY(data: TicketRenderData): number {
 /**
  * Generate a complete ticket SVG — no external PNG template needed.
  *
- * Dimensions: 800 x 1200 px. Dark theme with 7 NOTES purple (#7C3AED) branding.
+ * Uses SVG viewBox to support high-resolution rendering at any scale.
+ * The logical coordinate system is always 800x1200 (LAYOUT.W × LAYOUT.H).
+ * When scale > 1, the SVG width/height are multiplied so the renderer
+ * produces a larger bitmap while all coordinates stay in 800x1200 space.
+ *
  * Layout (top → bottom):
  *   Brand bar → Event title → Date/Time/Venue → Divider →
- *   Attendee name → Ticket type badge → Divider →
- *   Ticket/Order info (left) + QR placeholder (right) →
+ *   Attendee name → Ticket type badges → Price → Divider →
+ *   Ticket/Order/Issue info (left) + QR placeholder (right) →
  *   Valid for entry → Footer
+ *
+ * @param data - Ticket content data
+ * @param scale - Rendering scale factor (1=screen 72dpi, 3≈300dpi print)
  */
-function generateTicketSvg(data: TicketRenderData): string {
-  const W = LAYOUT.W;
-  const H = LAYOUT.H;
+function generateTicketSvg(data: TicketRenderData, scale: number = 1): string {
+  const W = Math.round(LAYOUT.W * scale);
+  const H = Math.round(LAYOUT.H * scale);
+  // viewBox stays at the logical 800×1200 coordinate space
+  const VB_W = LAYOUT.W;
+  const VB_H = LAYOUT.H;
 
   const { titleStartY, titleLineH, metaOffsetY, metaLineH, venueLineH, dividerOffset,
-    attendeeOffset, attendeeNameOffset, badgeOffset, badgeHeight, divider2Offset,
+    attendeeOffset, attendeeNameOffset, badgeOffset, badgeHeight, badgeGap,
+    priceOffsetY, divider2Offset,
     infoSectionOffset, qrPlaceholderX, qrPlaceholderSize, qrCornerRadius } = LAYOUT;
 
   // Brand colors
@@ -189,8 +206,8 @@ function generateTicketSvg(data: TicketRenderData): string {
   // ── Build SVG ────────────────────────────────────────────
   const lines: string[] = [];
 
-  // Root SVG
-  lines.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">`);
+  // Root SVG — use viewBox to scale the logical 800×1200 space to any resolution
+  lines.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${VB_W} ${VB_H}">`);
 
   // ── Defs ────────────────────────────────────────────────
   // The @font-face for Inter Regular is embedded as base64 data URI so
@@ -239,9 +256,11 @@ function generateTicketSvg(data: TicketRenderData): string {
   lines.push(`<rect x="30" y="70" width="740" height="50" fill="url(#brandGrad)"/>`);
 
   // 7 NOTES brand name
-  lines.push(`<text x="65" y="82" class="brand-text" text-anchor="start">7 NOTES</text>`);
+  lines.push(`<text x="65" y="76" class="brand-text" text-anchor="start">7 NOTES</text>`);
+  // Organizer name — smaller, below the brand
+  lines.push(`<text x="65" y="100" font-family="'Inter',sans-serif" font-size="11px" font-weight="500" fill="rgba(255,255,255,0.75)" text-anchor="start" letter-spacing="1px" xml:space="preserve">Presented by ${escapeXml(data.organizerName)}</text>`);
   // Evora tag
-  lines.push(`<text x="735" y="82" font-family="sans-serif" font-size="12px" font-weight="600" fill="rgba(255,255,255,0.7)" text-anchor="end" letter-spacing="2px">EVORA</text>`);
+  lines.push(`<text x="735" y="76" font-family="sans-serif" font-size="12px" font-weight="600" fill="rgba(255,255,255,0.7)" text-anchor="end" letter-spacing="2px">EVORA</text>`);
 
   // Diagonal stripe accent
   lines.push(`<line x1="30" y1="120" x2="770" y2="80" stroke="rgba(255,255,255,0.05)" stroke-width="1"/>`);
@@ -276,28 +295,58 @@ function generateTicketSvg(data: TicketRenderData): string {
   lines.push(`<text x="65" y="${attendeeSectionY}" class="label" text-anchor="start">ATTENDEE</text>`);
   lines.push(`<text x="65" y="${attendeeSectionY + attendeeNameOffset}" class="name" text-anchor="start" xml:space="preserve">${escapeXml(truncateText(data.attendeeName, 35))}</text>`);
 
-  // ── Ticket Type Badge ──────────────────────────────────
+  // ── Badge Row: Ticket Type + Complimentary + Price ──
   const badgeY = attendeeSectionY + badgeOffset;
-  // Badge background pill
-  const badgeText = data.ticketType;
-  const badgeWidth = Math.max(100, badgeText.length * 9 + 40);
-  const badgeX = 65;
-  lines.push(`<rect x="${badgeX}" y="${badgeY - 24}" width="${badgeWidth}" height="${badgeHeight}" rx="17" fill="rgba(124,58,237,0.2)" stroke="#7C3AED" stroke-width="1.5"/>`);
-  lines.push(`<text x="${badgeX + 20}" y="${badgeY - 2}" class="badge" text-anchor="start" xml:space="preserve">${escapeXml(badgeText)}</text>`);
+  let nextBadgeX = 65;
+
+  // Ticket type badge
+  const typeBadgeText = data.ticketType;
+  const typeBadgeWidth = Math.max(100, typeBadgeText.length * 9 + 40);
+  lines.push(`<rect x="${nextBadgeX}" y="${badgeY - 24}" width="${typeBadgeWidth}" height="${badgeHeight}" rx="17" fill="rgba(124,58,237,0.2)" stroke="#7C3AED" stroke-width="1.5"/>`);
+  lines.push(`<text x="${nextBadgeX + 20}" y="${badgeY - 2}" class="badge" text-anchor="start" xml:space="preserve">${escapeXml(typeBadgeText)}</text>`);
+  nextBadgeX += typeBadgeWidth + badgeGap;
+
+  // COMPLIMENTARY badge (only for complimentary tickets)
+  const isComplimentary = data.ticketCategory === 'COMPLIMENTARY';
+  if (isComplimentary) {
+    const compBadgeText = 'COMPLIMENTARY';
+    const compBadgeWidth = compBadgeText.length * 9 + 44;
+    lines.push(`<rect x="${nextBadgeX}" y="${badgeY - 24}" width="${compBadgeWidth}" height="${badgeHeight}" rx="17" fill="rgba(245,158,11,0.15)" stroke="rgba(245,158,11,0.6)" stroke-width="1.5"/>`);
+    lines.push(`<text x="${nextBadgeX + 20}" y="${badgeY - 2}" class="badge" text-anchor="start" fill="#F59E0B" xml:space="preserve">${compBadgeText}</text>`);
+  }
+
+  // Price display
+  const priceAreaY = badgeY + priceOffsetY;
+  const priceText = isComplimentary
+    ? '₹0 / Complimentary'
+    : `₹${(data.pricePaid / 100).toFixed(2)}`;
+  lines.push(`<text x="65" y="${priceAreaY}" font-family="'Inter',sans-serif" font-size="16px" font-weight="700" fill="${isComplimentary ? '#F59E0B' : '#A1A1AA'}" text-anchor="start" letter-spacing="1px" xml:space="preserve">${escapeXml(priceText)}</text>`);
 
   // ── Dashed Divider 2 ───────────────────────────────────
-  const divider2Y = badgeY + divider2Offset;
+  const divider2Y = priceAreaY + divider2Offset;
   lines.push(`<line x1="65" y1="${divider2Y}" x2="735" y2="${divider2Y}" stroke="rgba(255,255,255,0.08)" stroke-width="1" stroke-dasharray="6,4"/>`);
 
   // ── Ticket / Order Info (Left) + QR Placeholder (Right) ─
   const infoSectionY = divider2Y + infoSectionOffset;
 
   // Left column — ticket info
-  lines.push(`<text x="65" y="${infoSectionY}" class="info-label" text-anchor="start">TICKET NUMBER</text>`);
-  lines.push(`<text x="65" y="${infoSectionY + 24}" class="info-value" text-anchor="start" xml:space="preserve">${escapeXml(data.ticketNumber)}</text>`);
+  const infoLineH = 28;
+  const infoLabelH = 22;
+  let infoY = infoSectionY;
 
-  lines.push(`<text x="65" y="${infoSectionY + 60}" class="info-label" text-anchor="start">ORDER NUMBER</text>`);
-  lines.push(`<text x="65" y="${infoSectionY + 84}" class="info-value" text-anchor="start" xml:space="preserve">${escapeXml(data.orderNumber || '-')}</text>`);
+  // Row 1: Ticket Number
+  lines.push(`<text x="65" y="${infoY}" class="info-label" text-anchor="start">TICKET NUMBER</text>`);
+  lines.push(`<text x="65" y="${infoY + infoLabelH}" class="info-value" text-anchor="start" xml:space="preserve">${escapeXml(data.ticketNumber)}</text>`);
+  infoY += infoLineH + infoLabelH;
+
+  // Row 2: Order Number
+  lines.push(`<text x="65" y="${infoY}" class="info-label" text-anchor="start">ORDER NUMBER</text>`);
+  lines.push(`<text x="65" y="${infoY + infoLabelH}" class="info-value" text-anchor="start" xml:space="preserve">${escapeXml(data.orderNumber || '-')}</text>`);
+  infoY += infoLineH + infoLabelH;
+
+  // Row 3: Issue Date
+  lines.push(`<text x="65" y="${infoY}" class="info-label" text-anchor="start">ISSUED ON</text>`);
+  lines.push(`<text x="65" y="${infoY + infoLabelH}" class="info-value" text-anchor="start" xml:space="preserve">${escapeXml(data.issueDate)}</text>`);
 
   // Right column — QR code placeholder
   const qrPlaceholderY = computeQrY(data);
@@ -348,21 +397,25 @@ function generateTicketSvg(data: TicketRenderData): string {
  * 2. Generates QR code from the opaque token
  * 3. Composites QR onto the SVG PNG at the QR placeholder position
  * 4. Returns final PNG buffer
+ *
+ * @param data - Ticket content data
+ * @param scale - Rendering scale factor (1=screen 72dpi, 3≈300dpi print).
+ *                All coordinates and QR are scaled accordingly.
  */
-export async function renderTicketPng(data: TicketRenderData): Promise<Buffer> {
+export async function renderTicketPng(data: TicketRenderData, scale: number = 1): Promise<Buffer> {
   // ── Generate QR Code ────────────────────────────────────
-  const qrSize = 160;
-  const qrMargin = 2;
+  const qrSize = LAYOUT.qrCodeSize * scale;
+  const qrMargin = LAYOUT.qrMargin;
 
   const qrBuffer = await QRCode.toBuffer(data.qrPayload, {
     type: 'png',
-    width: qrSize,
+    width: Math.round(qrSize),
     margin: qrMargin,
     errorCorrectionLevel: 'H',
   });
 
   // ── Generate Full Ticket SVG ────────────────────────────
-  const svgString = generateTicketSvg(data);
+  const svgString = generateTicketSvg(data, scale);
 
   // ── Render SVG to PNG ──────────────────────────────────
   const svgPngBuffer = await sharp(Buffer.from(svgString))
@@ -373,10 +426,10 @@ export async function renderTicketPng(data: TicketRenderData): Promise<Buffer> {
   // Use shared computeQrY() so QR position stays in sync with SVG layout.
   const qrPlaceholderY = computeQrY(data);
 
-  // Center QR (160px) in its 170x170 placeholder
-  const qrOffset = Math.round((LAYOUT.qrPlaceholderSize - LAYOUT.qrCodeSize) / 2);
-  const qrX = LAYOUT.qrPlaceholderX + qrOffset;
-  const qrY = qrPlaceholderY + qrOffset;
+  // Center QR in its placeholder — all positions multiplied by scale
+  const qrOffset = Math.round(((LAYOUT.qrPlaceholderSize - LAYOUT.qrCodeSize) / 2) * scale);
+  const qrX = Math.round(LAYOUT.qrPlaceholderX * scale + qrOffset);
+  const qrY = Math.round(qrPlaceholderY * scale + qrOffset);
 
   // Composite QR onto the rendered ticket
   return sharp(svgPngBuffer)
@@ -392,21 +445,34 @@ export async function renderTicketPng(data: TicketRenderData): Promise<Buffer> {
 }
 
 /**
- * Render a ticket as a PDF buffer.
- * Embeds the rendered PNG onto a PDF page at full size.
+ * Render a ticket as a print-quality PDF buffer (300 DPI equivalent).
+ *
+ * The ticket is rendered at 3× resolution (2400×3600 px from the 800×1200 SVG)
+ * and embedded into an 8×12 inch PDF page (576×864 points).
+ * This gives an effective 300 DPI print resolution (2400 px / 8 in = 300 DPI).
+ *
+ * The rendered PNG is embedded at full pixel size but the PDF page is set
+ * to the physical print dimensions, so PDF viewers/printers map it correctly.
  */
 export async function renderTicketPdf(data: TicketRenderData): Promise<Buffer> {
-  const pngBuffer = await renderTicketPng(data);
+  // Render at 3× for 300 DPI print quality
+  const PRINT_SCALE = 3;
+  const pngBuffer = await renderTicketPng(data, PRINT_SCALE);
 
   const pdfDoc = await PDFDocument.create();
   const pngImage = await pdfDoc.embedPng(pngBuffer);
 
-  const page = pdfDoc.addPage([pngImage.width, pngImage.height]);
+  // Physical page size: 8 × 12 inches at 72 points/inch = 576 × 864 points
+  // This makes the 2400×3600 pixel image render at 300 DPI
+  const pageWidthPoints = 576;
+  const pageHeightPoints = 864;
+
+  const page = pdfDoc.addPage([pageWidthPoints, pageHeightPoints]);
   page.drawImage(pngImage, {
     x: 0,
     y: 0,
-    width: pngImage.width,
-    height: pngImage.height,
+    width: pageWidthPoints,
+    height: pageHeightPoints,
   });
 
   return Buffer.from(await pdfDoc.save());

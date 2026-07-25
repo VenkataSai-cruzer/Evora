@@ -27,6 +27,9 @@ export interface TicketRenderPayload {
   eventTime: string;
   venue: string;
   ticketType: string;
+  ticketCategory: string;   // PAID | COMPLIMENTARY | VIP | etc.
+  pricePaid: number;        // in paise (0 for complimentary)
+  organizerName: string;
   orderNumber: string | null;
   issuanceSource: string;
   issuedAt: Date;
@@ -70,6 +73,18 @@ function formatTime(d: Date): string {
 }
 
 /**
+ * Format a Date to a short date string for display on the ticket (e.g. "24 Jul 2026").
+ */
+function formatShortDate(d: Date): string {
+  return d.toLocaleDateString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+}
+
+/**
  * SINGLE authoritative function for all ticket rendering data.
  *
  * Loads the existing Ticket record with its real relations —
@@ -94,6 +109,9 @@ export async function getTicketRenderPayload(
           startAt: true,
           venueName: true,
           venueAddress: true,
+          organizer: {
+            select: { name: true },
+          },
         },
       },
       ticketType: {
@@ -153,6 +171,9 @@ export async function getTicketRenderPayload(
     eventTime: timeStr,
     venue,
     ticketType: ticket.ticketType?.name || 'General Admission',
+    ticketCategory: ticket.ticketCategory,
+    pricePaid: ticket.pricePaid,
+    organizerName: event.organizer?.name || '7 NOTES',
     orderNumber: ticket.order?.orderNumber || null,
     issuanceSource,
     issuedAt: ticket.issuedAt || ticket.createdAt,
@@ -175,8 +196,12 @@ export function payloadToRenderData(payload: TicketRenderPayload): TicketRenderD
     venue: payload.venue,
     attendeeName: payload.attendeeName,
     ticketType: payload.ticketType,
+    ticketCategory: payload.ticketCategory,
+    pricePaid: payload.pricePaid,
+    organizerName: payload.organizerName,
     ticketNumber: payload.ticketNumber,
     orderNumber: payload.orderNumber || '',
+    issueDate: formatShortDate(payload.issuedAt),
     qrPayload: payload.qrPayload || '',
   };
 }

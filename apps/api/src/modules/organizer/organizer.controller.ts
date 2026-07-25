@@ -435,6 +435,53 @@ export class OrganizerController {
     return reply.send({ success: true, message: 'Booking reopened. Public status set to LIVE.' });
   }
 
+  // ── Check-in Stats (live widget, organizer-scoped) ───────
+
+  /**
+   * GET /organizer/events/:eventId/checkin-stats
+   * Returns real-time check-in stats for the event dashboard widget.
+   * Scoped to assigned organizer events only.
+   */
+  async getCheckinStats(request: FastifyRequest, reply: FastifyReply) {
+    const organizerId = request.user!.id;
+    const { eventId } = request.params as { eventId: string };
+
+    try {
+      await getOrganizerAssignment(organizerId, eventId);
+    } catch {
+      return reply.status(403).send({ error: 'Not assigned to this event' });
+    }
+
+    // Aggregate check-in stats — includes all tickets (visible + admin-only)
+    // because the total counts are safe aggregated stats
+    const [totalTickets, checkedIn] = await Promise.all([
+      prisma.ticket.count({
+        where: { eventId, status: { in: ['CONFIRMED', 'CHECKED_IN'] } },
+      }),
+      prisma.ticket.count({
+        where: { eventId, status: 'CHECKED_IN' },
+      }),
+    ]);
+
+    // Aggregate capacity
+    const ticketTypes = await prisma.ticketType.findMany({
+      where: { eventId },
+      select: { capacity: true, soldCount: true },
+    });
+
+    const totalCapacity = ticketTypes.reduce((sum, tt) => sum + (tt.capacity > 0 ? tt.capacity : 0), 0);
+    const totalSold = ticketTypes.reduce((sum, tt) => sum + tt.soldCount, 0);
+
+    return {
+      totalTickets,
+      checkedIn,
+      remaining: totalTickets - checkedIn,
+      totalCapacity: totalCapacity || null,
+      totalSold,
+      hasCapacityTypes: ticketTypes.some((tt) => tt.capacity > 0),
+    };
+  }
+
   // ── Organizer Dashboard Stats (event-scoped, no global data) ──
 
   /**

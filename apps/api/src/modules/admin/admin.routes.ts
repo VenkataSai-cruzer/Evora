@@ -42,6 +42,7 @@ export async function adminRoutes(app: FastifyInstance) {
 
   // Check-ins
   app.get('/events/:id/check-ins', controller.listCheckIns.bind(controller));
+  app.get('/events/:id/checkin-stats', controller.getCheckinStats.bind(controller));
 
   // Phase E: Complimentary tickets (ADMIN_ONLY)
   app.post('/events/:eventId/complimentary-tickets', controller.issueComplimentaryTickets.bind(controller));

@@ -1576,6 +1576,51 @@ export class AdminController {
     return reply.send(csvContent);
   }
 
+  // ── Check-in Stats (live widget data) ───────────────────
+
+  /**
+   * GET /admin/events/:id/checkin-stats
+   * Returns real-time check-in stats for the event dashboard widget.
+   * Used by the CheckInStatsCard component with auto-polling.
+   */
+  async getCheckinStats(request: FastifyRequest, reply: FastifyReply) {
+    const { id } = request.params as { id: string };
+
+    const event = await prisma.event.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!event) return reply.status(404).send({ error: 'Event not found' });
+
+    // Aggregate check-in stats
+    const [totalTickets, checkedIn] = await Promise.all([
+      prisma.ticket.count({
+        where: { eventId: id, status: { in: ['CONFIRMED', 'CHECKED_IN'] } },
+      }),
+      prisma.ticket.count({
+        where: { eventId: id, status: 'CHECKED_IN' },
+      }),
+    ]);
+
+    // Aggregate capacity and sold counts
+    const ticketTypes = await prisma.ticketType.findMany({
+      where: { eventId: id },
+      select: { capacity: true, soldCount: true },
+    });
+
+    const totalCapacity = ticketTypes.reduce((sum, tt) => sum + (tt.capacity > 0 ? tt.capacity : 0), 0);
+    const totalSold = ticketTypes.reduce((sum, tt) => sum + tt.soldCount, 0);
+
+    return {
+      totalTickets,
+      checkedIn,
+      remaining: totalTickets - checkedIn,
+      totalCapacity: totalCapacity || null, // null means unlimited
+      totalSold,
+      hasCapacityTypes: ticketTypes.some((tt) => tt.capacity > 0),
+    };
+  }
+
   // ── Check-ins ─────────────────────────────────────────────
 
   async listCheckIns(request: FastifyRequest, _reply: FastifyReply) {

@@ -30,6 +30,7 @@ export async function organizerRoutes(app: FastifyInstance) {
 
   // Analytics — safe aggregated view only
   app.get('/events/:eventId/analytics', controller.getAnalytics.bind(controller));
+  app.get('/events/:eventId/checkin-stats', controller.getCheckinStats.bind(controller));
 
   // ── Organizer Stats (event-scoped, no global data) ───────
   app.get('/stats', controller.getStats.bind(controller));

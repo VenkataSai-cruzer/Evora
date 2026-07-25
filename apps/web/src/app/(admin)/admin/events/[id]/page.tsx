@@ -14,6 +14,7 @@ import {
   updateAdminTicketType,
 } from '@/lib/api-client';
 import { formatDate, formatTime } from '@/lib/dates';
+import { CheckInStatsCard } from '@/components/events/CheckInStatsCard';
 
 // ── Inline ticket type editor row ────────────────────────────
 function TicketTypeRow({
@@ -346,6 +347,11 @@ export default function AdminEventDetailPage() {
           )}
         </div>
       </div>
+
+      {/* Check-in Stats (live widget) */}
+      {event.status !== 'DRAFT' && (
+        <CheckInStatsCard apiPath={`/admin/events/${id}/checkin-stats`} pollIntervalMs={15000} />
+      )}
 
       {/* Event lifecycle controls */}
       {actions.some((a) => a.visible) && (
