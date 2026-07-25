@@ -16,4 +16,4 @@ releaseCommand = "cd apps/api && node scripts/run-migration.mjs"
 healthcheckPath = "/api/v1/health"
 healthcheckTimeout = 60
 restartPolicyType = "on_failure"
-restartPolicyMaxRetries = 0  # Avoid cascading connection leaks on retry
+restartPolicyMaxRetries = 1  # Avoid cascading connection leaks on retry

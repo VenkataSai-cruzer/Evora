@@ -82,32 +82,32 @@ export class PaymentController {
       return reply.status(400).send({ error: 'orderNumber and utrNumber are required' });
     }
 
-    if (!fileBuffer || !originalFileName || !mimeType) {
-      return reply.status(400).send({ error: 'Screenshot is required' });
+    // Screenshot is now optional — UTR-only submissions are accepted
+    // for cases where file uploads have issues. Screenshot can be added later
+    // by the user or admin if needed for verification.
+    const hasScreenshot = !!(fileBuffer && originalFileName && mimeType);
+    if (hasScreenshot) {
+      // Validate uploaded file
+      if (!ALLOWED_MIME_TYPES.includes(mimeType!)) {
+        return reply.status(415).send({
+          error: `Unsupported file type "${mimeType}". Allowed: JPEG, PNG, WebP`,
+        });
+      }
+
+      const ext = '.' + (originalFileName!.split('.').pop() || '').toLowerCase();
+      if (!ALLOWED_EXTENSIONS.includes(ext)) {
+        return reply.status(415).send({ error: 'Invalid file extension' });
+      }
+
+      if (!validateMagicBytes(fileBuffer!, mimeType!)) {
+        return reply.status(415).send({ error: 'File content does not match declared type' });
+      }
     }
 
     // Validate UTR format
     const normalized = normalizeUtr(utrNumber);
     if (!/^[A-Z0-9]{8,30}$/.test(normalized)) {
       return reply.status(400).send({ error: 'Invalid UTR number format (8–30 alphanumeric characters)' });
-    }
-
-    // Validate MIME type
-    if (!ALLOWED_MIME_TYPES.includes(mimeType)) {
-      return reply.status(415).send({
-        error: `Unsupported file type "${mimeType}". Allowed: JPEG, PNG, WebP`,
-      });
-    }
-
-    // Validate file extension
-    const ext = '.' + (originalFileName.split('.').pop() || '').toLowerCase();
-    if (!ALLOWED_EXTENSIONS.includes(ext)) {
-      return reply.status(415).send({ error: 'Invalid file extension' });
-    }
-
-    // Validate magic bytes
-    if (!validateMagicBytes(fileBuffer, mimeType)) {
-      return reply.status(415).send({ error: 'File content does not match declared type' });
     }
 
     // Check order ownership
@@ -146,56 +146,55 @@ export class PaymentController {
       return reply.status(409).send({ error: 'This UTR number has already been used' });
     }
 
-    // Calculate checksum
-    const checksum = crypto.createHash('sha256').update(fileBuffer).digest('hex');
+    // Calculate checksum (for screenshot if provided)
+    const checksum = hasScreenshot
+      ? crypto.createHash('sha256').update(fileBuffer!).digest('hex')
+      : 'no-file';
 
-    // Generate a randomized stored filename
-    const storedFileName = `${randomUUID()}${ext}`;
+    // Generate a randomized stored filename (for screenshot if provided)
+    const storedFileName = hasScreenshot ? `${randomUUID()}.${(originalFileName!.split('.').pop() || '').toLowerCase()}` : '';
 
-    // Upload to Google Drive (if enabled)
+    // Upload to Google Drive (if screenshot provided and Drive enabled)
     let driveFileId: string | undefined;
     let driveViewUrl: string | undefined;
-    let storageProvider = 'GOOGLE_DRIVE';
+    let storageProvider = 'NO_FILE';
 
-    const driveEnabled = process.env.GOOGLE_DRIVE_ENABLED === 'true';
-    const hasKeyJson = !!process.env.GOOGLE_SERVICE_ACCOUNT_KEY_JSON;
-    const hasIndividual = !!(
-      process.env.GOOGLE_PROJECT_ID &&
-      process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL &&
-      process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
-    );
-    const hasDriveCreds = hasKeyJson || hasIndividual;
+    if (hasScreenshot) {
+      const driveEnabled = process.env.GOOGLE_DRIVE_ENABLED === 'true';
+      const hasKeyJson = !!process.env.GOOGLE_SERVICE_ACCOUNT_KEY_JSON;
+      const hasIndividual = !!(
+        process.env.GOOGLE_PROJECT_ID &&
+        process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL &&
+        process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
+      );
+      const hasDriveCreds = hasKeyJson || hasIndividual;
 
-    console.log(`[PaymentProof] Drive check — enabled=${driveEnabled} hasCreds=${hasDriveCreds} (keyJson=${hasKeyJson} individual=${hasIndividual})`);
+      console.log(`[PaymentProof] Drive check — enabled=${driveEnabled} hasCreds=${hasDriveCreds} (keyJson=${hasKeyJson} individual=${hasIndividual})`);
 
-    if (driveEnabled && hasDriveCreds) {
-      try {
-        const driveService = new GoogleDriveService();
-        const uploadResult = await driveService.uploadPaymentProof(
-          order.event.slug || order.event.title,
-          order.orderNumber,
-          normalized,
-          fileBuffer,
-          mimeType,
-        );
-        driveFileId = uploadResult.fileId;
-        driveViewUrl = uploadResult.viewUrl;
-      } catch (err) {
-        // Drive is enabled and credentials are configured, but the upload FAILED.
-        // Returning a 503 tells the user it is a temporary backend issue, not
-        // something they did wrong. Do NOT silently fall back to LOCAL because
-        // that creates a database record with no accessible file — the admin
-        // would never be able to review the screenshot.
-        console.error('[GoogleDrive] Upload failed — returning 503:', err);
-        return reply.status(503).send({
-          error: 'Payment proof storage is temporarily unavailable. Please try again.',
-          details: 'Screenshot could not be saved. This is a server issue, not a problem with your submission.',
-        });
+      if (driveEnabled && hasDriveCreds) {
+        try {
+          const driveService = new GoogleDriveService();
+          const uploadResult = await driveService.uploadPaymentProof(
+            order.event.slug || order.event.title,
+            order.orderNumber,
+            normalized,
+            fileBuffer!,
+            mimeType!,
+          );
+          driveFileId = uploadResult.fileId;
+          driveViewUrl = uploadResult.viewUrl;
+          storageProvider = 'GOOGLE_DRIVE';
+        } catch (err) {
+          console.error('[GoogleDrive] Upload failed — returning 503:', err);
+          return reply.status(503).send({
+            error: 'Payment proof storage is temporarily unavailable. Please try again.',
+            details: 'Screenshot could not be saved. This is a server issue, not a problem with your submission.',
+          });
+        }
+      } else {
+        storageProvider = 'LOCAL';
+        console.log(`[Dev] Payment proof stored locally for order ${orderNumber}, UTR ${normalized}`);
       }
-    } else {
-      // Dev mode: Drive not configured — store metadata only
-      storageProvider = 'LOCAL';
-      console.log(`[Dev] Payment proof stored locally for order ${orderNumber}, UTR ${normalized}`);
     }
 
     // Determine if this is a resubmission before the transaction to avoid stale reads
@@ -272,9 +271,9 @@ export class PaymentController {
             eventId: order.eventId,
             utrNumber: normalized,
             amount: order.total,
-            originalFileName,
+            originalFileName: hasScreenshot ? originalFileName! : 'no-file',
             storedFileName,
-            mimeType,
+            mimeType: hasScreenshot ? mimeType! : 'application/octet-stream',
             fileSize,
             checksum,
             googleDriveFileId: driveFileId ?? null,

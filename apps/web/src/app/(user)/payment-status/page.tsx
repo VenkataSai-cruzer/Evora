@@ -13,12 +13,12 @@ import { OrderTimeline, buildTimelineFromOrder } from '@/components/payments/Ord
 async function submitPaymentProofWithScreenshot(
   orderNumber: string,
   utrNumber: string,
-  screenshot: File,
+  screenshot?: File,
 ): Promise<{ success: boolean; proof?: { status: string; utrNumber: string } }> {
   const formData = new FormData();
   formData.append('orderNumber', orderNumber);
   formData.append('utrNumber', utrNumber);
-  formData.append('screenshot', screenshot);
+  if (screenshot) formData.append('screenshot', screenshot);
 
   const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:10000/api/v1';
 
@@ -93,7 +93,7 @@ function PaymentStatusContent() {
     }
   }, [loading, orderNumber, tickets, router]);
 
-  const handleSubmitProof = async (data: { utrNumber: string; screenshot: File; note?: string }) => {
+  const handleSubmitProof = async (data: { utrNumber: string; screenshot?: File; note?: string }) => {
     const effectiveOrder = orderNumber || tickets[0]?.order?.orderNumber;
     if (!effectiveOrder) throw new Error('Order number not found.');
     await submitPaymentProofWithScreenshot(effectiveOrder, data.utrNumber, data.screenshot);

@@ -6,7 +6,7 @@ interface PaymentSubmissionFormProps {
   orderNumber: string;
   isResubmission?: boolean;
   previousRejectionReason?: string;
-  onSubmit: (_data: { utrNumber: string; screenshot: File; note?: string }) => Promise<void>;
+  onSubmit: (_data: { utrNumber: string; screenshot?: File; note?: string }) => Promise<void>;
   onSuccess?: () => void;
 }
 
@@ -99,8 +99,7 @@ export function PaymentSubmissionForm({
     const utrError = validateUtr(utrNumber);
     if (utrError) errors.utrNumber = utrError;
 
-    if (!file) errors.screenshot = 'Payment screenshot is required.';
-    else {
+    if (file) {
       const fileError = validateFile(file);
       if (fileError) errors.screenshot = fileError;
     }
@@ -124,7 +123,7 @@ export function PaymentSubmissionForm({
     const progressInterval = simulateProgress();
 
     try {
-      await onSubmit({ utrNumber: utrNumber.trim(), screenshot: file!, note: note.trim() || undefined });
+      await onSubmit({ utrNumber: utrNumber.trim(), screenshot: file || undefined, note: note.trim() || undefined });
       clearInterval(progressInterval);
       setUploadProgress(100);
       setUploadState('success');
@@ -231,7 +230,7 @@ export function PaymentSubmissionForm({
         {/* File Upload */}
         <div>
           <label className="mb-1.5 block text-xs font-medium text-text-secondary">
-            Payment Screenshot <span className="text-error">*</span>
+            Payment Screenshot <span className="text-text-muted">(optional)</span>
           </label>
 
           <input
