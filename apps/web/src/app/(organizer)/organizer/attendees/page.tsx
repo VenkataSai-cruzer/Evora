@@ -129,7 +129,7 @@ export default function OrganizerAttendeesPage() {
                   </td>
                   <td className="px-4 py-3 text-text-secondary">{t.attendeeEmail}</td>
                   <td className="px-4 py-3">
-                    <Link href={`/tickets/${t.ticketNumber}`} className="font-mono text-primary hover:text-primary-hover">
+                    <Link href={`/organizer/tickets/${t.ticketNumber}`} className="font-mono text-primary hover:text-primary-hover">
                       {t.ticketNumber}
                     </Link>
                   </td>

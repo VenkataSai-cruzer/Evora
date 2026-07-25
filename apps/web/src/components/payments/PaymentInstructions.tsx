@@ -152,19 +152,20 @@ export function PaymentInstructions({
           Open UPI App
         </button>
 
-        {/* QR Code */}
+        {/* Official Bank QR Code */}
         <div className="text-center">
-          <p className="mb-2 text-xs text-text-muted">Or scan to pay</p>
-          <div className="mx-auto flex h-40 w-40 items-center justify-center rounded-xl border-2 border-dashed border-[var(--color-border)] bg-surface-elevated">
-            <div className="text-center">
-              <svg className="mx-auto h-10 w-10 text-text-muted" fill="none" viewBox="0 0 24 24" strokeWidth={1} stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5z" />
-                <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5z" />
-              </svg>
-              <p className="mt-1 text-2xs text-text-muted">QR will render here</p>
-            </div>
+          <p className="mb-3 text-xs text-text-muted">Scan the QR to pay</p>
+          <div className="mx-auto inline-flex flex-col items-center rounded-xl border border-[var(--color-border)] bg-white p-4 shadow-lg">
+            <img
+              src="/brand/QR.jpeg"
+              alt="Bank QR Code"
+              className="h-64 w-64 object-contain"
+            />
+            <p className="mt-2 text-xs font-semibold text-gray-800">
+              {accountName}
+            </p>
           </div>
-          <p className="mt-2 text-2xs text-text-muted">Scan with any UPI app to pay</p>
+          <p className="mt-2 text-2xs text-text-muted">Scan with any UPI app (GPay, PhonePe, Paytm, BHIM)</p>
         </div>
 
         {/* Important note */}

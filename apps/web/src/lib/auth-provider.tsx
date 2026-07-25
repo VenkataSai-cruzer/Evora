@@ -1,7 +1,8 @@
 'use client';
 
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
-import { getSession, logout as apiLogout, setSessionToken } from './api-client';
+import { flushSync } from 'react-dom';
+import { getSession, logout as apiLogout, setSessionToken, clearCsrfToken } from './api-client';
 import { useQueryClient } from '@tanstack/react-query';
 
 export interface AuthUser {
@@ -19,6 +20,12 @@ interface AuthContextValue {
   refresh: () => Promise<void>;
   signOut: () => Promise<void>;
   switchWorkspace: (_role: string) => Promise<void>;
+  /**
+   * Set the authenticated user directly from a login/register response.
+   * Unlike refresh(), this does NOT make an additional API call,
+   * and the user is available immediately — no race condition with navigation.
+   */
+  loginAs: (_user: AuthUser) => void;
 }
 
 const AuthContext = createContext<AuthContextValue>({
@@ -27,6 +34,7 @@ const AuthContext = createContext<AuthContextValue>({
   refresh: async () => {},
   signOut: async () => {},
   switchWorkspace: async () => {},
+  loginAs: () => {},
 });
 
 export function useAuth(): AuthContextValue {
@@ -81,6 +89,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const clearAllUserState = useCallback(() => {
     setUser(null);
     setSessionToken(null);
+    clearCsrfToken();
     // Clear all user-specific React Query caches
     queryClient.clear();
     // Broadcast to other tabs
@@ -177,8 +186,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [queryClient]);
 
+  /**
+   * Set the authenticated user directly from a login/register response.
+   * This avoids the race condition between refresh() (which queues async state updates)
+   * and router.replace() (which navigates immediately), and eliminates an extra API call.
+   */
+  const loginAs = useCallback((authUser: AuthUser) => {
+    // flushSync ensures React commits the state update BEFORE navigation happens.
+    // Without this, router.replace() in the login page would navigate before
+    // the AuthContext value updates, causing AuthGuard to see stale null user.
+    flushSync(() => {
+      setUser(authUser);
+      setLoading(false);
+    });
+    broadcast('LOGGED_IN');
+  }, []);
+
   return (
-    <AuthContext.Provider value={{ user, loading, refresh, signOut, switchWorkspace }}>
+    <AuthContext.Provider value={{ user, loading, refresh, signOut, switchWorkspace, loginAs }}>
       {children}
     </AuthContext.Provider>
   );

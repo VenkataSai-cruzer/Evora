@@ -435,6 +435,91 @@ export class OrganizerController {
     return reply.send({ success: true, message: 'Booking reopened. Public status set to LIVE.' });
   }
 
+  // ── Ticket Detail (organizer-scoped) ─────────────────────
+
+  /**
+   * GET /organizer/tickets/:ticketNumber
+   * Full ticket detail — same rich data as admin, but scoped to the organizer's assigned events.
+   */
+  async getTicket(request: FastifyRequest, reply: FastifyReply) {
+    const organizerId = request.user!.id;
+    const { ticketNumber } = request.params as { ticketNumber: string };
+
+    const ticket = await prisma.ticket.findUnique({
+      where: { ticketNumber },
+      include: {
+        event: {
+          select: {
+            id: true, title: true, slug: true, posterObjectKey: true,
+            startAt: true, endAt: true, venueName: true, venueAddress: true,
+            mapUrl: true, status: true, organizerId: true,
+            organizer: { select: { id: true, name: true } },
+          },
+        },
+        ticketType: { select: { id: true, name: true, price: true, currency: true } },
+        order: { select: { id: true, orderNumber: true, status: true, total: true } },
+        attendee: { select: { id: true, attendeeName: true, attendeeEmail: true } },
+        checkIn: { select: { checkedInAt: true, result: true, scannerId: true, gateName: true } },
+        user: { select: { id: true, name: true, email: true } },
+        issuedBy: { select: { name: true } },
+      },
+    });
+
+    if (!ticket) {
+      return reply.status(404).send({ error: 'Ticket not found' });
+    }
+
+    // Verify organizer is assigned to this ticket's event
+    try {
+      await getOrganizerAssignment(organizerId, ticket.eventId);
+    } catch {
+      return reply.status(403).send({ error: 'Not assigned to this event' });
+    }
+
+    // Hide ADMIN_ONLY visibility tickets from organizers
+    if (ticket.visibility === ADMIN_ONLY_VISIBILITY) {
+      return reply.status(403).send({ error: 'Not authorized to view this ticket' });
+    }
+
+    return { ticket };
+  }
+
+  /**
+   * GET /organizer/orders/:id
+   * Order detail by internal ID (not order number) — scoped to organizer's events.
+   */
+  async getOrderById(request: FastifyRequest, reply: FastifyReply) {
+    const organizerId = request.user!.id;
+    const { id } = request.params as { id: string };
+
+    const order = await prisma.order.findUnique({
+      where: { id },
+      include: {
+        user: { select: { id: true, name: true, email: true, phone: true } },
+        event: { select: { id: true, title: true, slug: true, startAt: true, venueName: true } },
+        attendees: {
+          include: { ticketType: { select: { name: true, price: true } } },
+        },
+        tickets: {
+          select: { id: true, ticketNumber: true, ticketCategory: true, status: true },
+        },
+        paymentProof: true,
+        payments: { orderBy: { createdAt: 'desc' } },
+      },
+    });
+
+    if (!order) return reply.status(404).send({ error: 'Order not found' });
+
+    // Verify organizer is assigned to the event
+    try {
+      await getOrganizerAssignment(organizerId, order.eventId);
+    } catch {
+      return reply.status(403).send({ error: 'Not assigned to this event' });
+    }
+
+    return { order };
+  }
+
   // ── Check-in Stats (live widget, organizer-scoped) ───────
 
   /**

@@ -17,7 +17,7 @@ function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get('callbackUrl') || '/my-event';
-  const { refresh } = useAuth();
+  const { loginAs } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -32,7 +32,15 @@ function LoginForm() {
     try {
       const result = await login(email, password);
       if (result.user) {
-        await refresh();
+        // Set user immediately from login result — avoids race condition
+        // where refresh() + router.replace() causes AuthGuard to redirect back
+        loginAs({
+          id: result.user.id,
+          name: result.user.name,
+          email: result.user.email,
+          role: result.user.role,
+          allowedRoles: (result.user as any).allowedRoles,
+        });
         const safeUrl = sanitizeCallbackUrl(result.user.role === 'ADMIN' ? undefined : callbackUrl, result.user.role);
         router.replace(safeUrl);
         router.refresh();

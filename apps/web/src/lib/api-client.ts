@@ -274,6 +274,8 @@ export async function getSession(): Promise<SessionUser | null> {
 }
 
 export async function login(email: string, password: string): Promise<{ user: SessionUser; csrfToken: string; sessionToken?: string }> {
+  // Clear CSRF token before login so a fresh one is fetched based on the new session
+  clearCsrfToken();
   const result = await api.post<{ user: SessionUser; csrfToken: string; sessionToken?: string }>('/auth/login', { email, password });
   // Store session token for mobile (header-based auth fallback)
   if (result.sessionToken) {
@@ -1058,6 +1060,25 @@ export async function checkUtr(utr: string): Promise<UtrCheckResponse> {
  */
 export function getProofImageUrl(proofId: string): string {
   return `${API_BASE_URL}/payments/proofs/${proofId}/image`;
+}
+
+// ── Organizer Tickets ────────────────────────────────────
+
+export async function getOrganizerTicket(ticketNumber: string): Promise<AdminTicketDetailResponse> {
+  const data = await api.get<{ ticket: AdminTicketDetailResponse }>(`/organizer/tickets/${encodeURIComponent(ticketNumber)}`);
+  return data.ticket;
+}
+
+export async function getOrganizerOrder(id: string): Promise<{ order: any }> {
+  return api.get(`/organizer/orders/by-id/${id}`);
+}
+
+export async function approveOrganizerOrder(orderNumber: string): Promise<AdminOrderActionResponse> {
+  return api.post(`/organizer/orders/${orderNumber}/approve`);
+}
+
+export async function rejectOrganizerOrder(orderNumber: string, reason?: string): Promise<AdminOrderActionResponse> {
+  return api.post(`/organizer/orders/${orderNumber}/reject`, { reason });
 }
 
 // ── User Dashboard (Phase 4.4) ───────────────────────────

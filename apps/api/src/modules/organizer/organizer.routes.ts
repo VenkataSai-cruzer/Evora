@@ -32,6 +32,10 @@ export async function organizerRoutes(app: FastifyInstance) {
   app.get('/events/:eventId/analytics', controller.getAnalytics.bind(controller));
   app.get('/events/:eventId/checkin-stats', controller.getCheckinStats.bind(controller));
 
+  // ── Ticket Detail (organizer-scoped) ──────────────────────
+  app.get('/tickets/:ticketNumber', controller.getTicket.bind(controller));
+  app.get('/orders/by-id/:id', controller.getOrderById.bind(controller));
+
   // ── Organizer Stats (event-scoped, no global data) ───────
   app.get('/stats', controller.getStats.bind(controller));
 
