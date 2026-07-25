@@ -221,6 +221,133 @@ export class OrganizerController {
   // ── Event Booking Controls (event-scoped via assignment) ──
 
   /**
+   * GET /organizer/events/:eventId/ticket-types
+   * List ticket types for an assigned event.
+   */
+  async listTicketTypes(request: FastifyRequest, reply: FastifyReply) {
+    const organizerId = request.user!.id;
+    const { eventId } = request.params as { eventId: string };
+    try { await getOrganizerAssignment(organizerId, eventId); }
+    catch { return reply.status(403).send({ error: 'Not assigned to this event' }); }
+
+    const ticketTypes = await prisma.ticketType.findMany({
+      where: { eventId },
+      orderBy: { price: 'asc' },
+    });
+    return { ticketTypes };
+  }
+
+  /**
+   * PATCH /organizer/events/:eventId/ticket-types/:ticketTypeId
+   * Update price, capacity, maxPerOrder, active, description for an assigned event.
+   * soldCount is read-only — never accept it from the request body.
+   */
+  async updateTicketType(request: FastifyRequest, reply: FastifyReply) {
+    const organizerId = request.user!.id;
+    const { eventId, ticketTypeId } = request.params as { eventId: string; ticketTypeId: string };
+    try { await getOrganizerAssignment(organizerId, eventId); }
+    catch { return reply.status(403).send({ error: 'Not assigned to this event' }); }
+
+    // Verify ticket type belongs to this event
+    const existing = await prisma.ticketType.findUnique({ where: { id: ticketTypeId } });
+    if (!existing || existing.eventId !== eventId) {
+      return reply.status(404).send({ error: 'Ticket type not found for this event' });
+    }
+
+    const body = request.body as {
+      name?: string;
+      description?: string;
+      price?: number;
+      capacity?: number;
+      maxPerOrder?: number;
+      active?: boolean;
+    };
+
+    // Whitelist — never let organizer change soldCount, eventId, id
+    const allowed: Record<string, unknown> = {};
+    if (body.name !== undefined) allowed.name = body.name;
+    if (body.description !== undefined) allowed.description = body.description;
+    if (body.price !== undefined) {
+      if (typeof body.price !== 'number' || body.price < 0) {
+        return reply.status(400).send({ error: 'price must be a non-negative number (in paise)' });
+      }
+      allowed.price = body.price;
+    }
+    if (body.capacity !== undefined) {
+      if (typeof body.capacity !== 'number' || body.capacity < existing.soldCount) {
+        return reply.status(400).send({
+          error: `capacity cannot be less than tickets already sold (${existing.soldCount})`,
+        });
+      }
+      allowed.capacity = body.capacity;
+    }
+    if (body.maxPerOrder !== undefined) allowed.maxPerOrder = body.maxPerOrder;
+    if (body.active !== undefined) allowed.active = body.active;
+
+    if (Object.keys(allowed).length === 0) {
+      return reply.status(400).send({ error: 'No valid fields to update' });
+    }
+
+    const ticketType = await prisma.ticketType.update({
+      where: { id: ticketTypeId },
+      data: allowed,
+    });
+
+    await writeAuditLog('TICKET_TYPE_UPDATED' as any, 'TicketType', ticketTypeId, {
+      actorId: organizerId,
+      actorRole: 'ORGANIZER',
+      eventId,
+      metadata: { changes: allowed },
+    });
+
+    return { ticketType };
+  }
+
+  /**
+   * POST /organizer/events/:eventId/pause-sales
+   * Temporarily pause ticket sales for the event.
+   */
+  async pauseSales(request: FastifyRequest, reply: FastifyReply) {
+    const organizerId = request.user!.id;
+    const { eventId } = request.params as { eventId: string };
+    try { await getOrganizerAssignment(organizerId, eventId); }
+    catch { return reply.status(403).send({ error: 'Not assigned to this event' }); }
+
+    await prisma.event.update({ where: { id: eventId }, data: { salesPaused: true } });
+
+    await writeAuditLog('EVENT_PAUSED', 'Event', eventId, {
+      actorId: organizerId, actorRole: 'ORGANIZER', eventId,
+    });
+
+    return reply.send({ success: true, message: 'Sales paused. No new bookings will be accepted.' });
+  }
+
+  /**
+   * POST /organizer/events/:eventId/resume-sales
+   * Resume ticket sales after a pause.
+   */
+  async resumeSales(request: FastifyRequest, reply: FastifyReply) {
+    const organizerId = request.user!.id;
+    const { eventId } = request.params as { eventId: string };
+    try { await getOrganizerAssignment(organizerId, eventId); }
+    catch { return reply.status(403).send({ error: 'Not assigned to this event' }); }
+
+    const event = await prisma.event.findUnique({ where: { id: eventId }, select: { status: true } });
+    if (!event) return reply.status(404).send({ error: 'Event not found' });
+    if (event.status !== 'PUBLISHED') {
+      return reply.status(409).send({ error: 'Event must be PUBLISHED to resume sales.' });
+    }
+
+    await prisma.event.update({ where: { id: eventId }, data: { salesPaused: false } });
+
+    await writeAuditLog('EVENT_RESUMED', 'Event', eventId, {
+      actorId: organizerId, actorRole: 'ORGANIZER', eventId,
+    });
+
+    return reply.send({ success: true, message: 'Sales resumed. Bookings are now open.' });
+  }
+
+  /**
    * POST /organizer/events/:eventId/mark-sold-out
    * Manually mark an assigned event as sold out.
    * Sets bookingClosed = true to block new bookings.

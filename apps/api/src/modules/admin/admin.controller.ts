@@ -300,10 +300,58 @@ export class AdminController {
     return reply.status(201).send({ ticketType });
   }
 
-  async updateTicketType(request: FastifyRequest, _reply: FastifyReply) {
-    const { ticketTypeId } = request.params as { ticketTypeId: string };
-    const body = request.body as Record<string, unknown>;
-    const ticketType = await prisma.ticketType.update({ where: { id: ticketTypeId }, data: body });
+  async updateTicketType(request: FastifyRequest, reply: FastifyReply) {
+    const { id: eventId, ticketTypeId } = request.params as { id: string; ticketTypeId: string };
+    const body = request.body as {
+      name?: string;
+      description?: string;
+      price?: number;
+      capacity?: number;
+      maxPerOrder?: number;
+      active?: boolean;
+    };
+    const adminId = request.user!.id;
+
+    // Verify ticket type belongs to this event
+    const existing = await prisma.ticketType.findUnique({ where: { id: ticketTypeId } });
+    if (!existing || existing.eventId !== eventId) {
+      return reply.status(404).send({ error: 'Ticket type not found for this event' });
+    }
+
+    // Whitelist — never allow soldCount, eventId, or id to be changed
+    const allowed: Record<string, unknown> = {};
+    if (body.name !== undefined) allowed.name = body.name;
+    if (body.description !== undefined) allowed.description = body.description;
+    if (body.price !== undefined) {
+      if (typeof body.price !== 'number' || body.price < 0) {
+        return reply.status(400).send({ error: 'price must be a non-negative number (in paise)' });
+      }
+      allowed.price = body.price;
+    }
+    if (body.capacity !== undefined) {
+      if (typeof body.capacity !== 'number' || body.capacity < existing.soldCount) {
+        return reply.status(400).send({
+          error: `capacity cannot be less than tickets already sold (${existing.soldCount})`,
+        });
+      }
+      allowed.capacity = body.capacity;
+    }
+    if (body.maxPerOrder !== undefined) allowed.maxPerOrder = body.maxPerOrder;
+    if (body.active !== undefined) allowed.active = body.active;
+
+    if (Object.keys(allowed).length === 0) {
+      return reply.status(400).send({ error: 'No valid fields to update' });
+    }
+
+    const ticketType = await prisma.ticketType.update({ where: { id: ticketTypeId }, data: allowed });
+
+    await writeAuditLog('TICKET_TYPE_UPDATED' as any, 'TicketType', ticketTypeId, {
+      actorId: adminId,
+      actorRole: 'ADMIN',
+      eventId,
+      metadata: { changes: allowed },
+    });
+
     return { ticketType };
   }
 

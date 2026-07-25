@@ -474,6 +474,21 @@ export async function reopenBooking(id: string): Promise<void> {
   await api.post(`/admin/events/${id}/reopen-booking`);
 }
 
+export async function updateAdminTicketType(
+  eventId: string,
+  ticketTypeId: string,
+  data: {
+    name?: string;
+    description?: string;
+    price?: number;
+    capacity?: number;
+    maxPerOrder?: number;
+    active?: boolean;
+  },
+): Promise<{ ticketType: any }> {
+  return api.patch(`/admin/events/${eventId}/ticket-types/${ticketTypeId}`, data);
+}
+
 // ── Organizer Events ────────────────────────────────────
 
 export async function getOrganizerEvents(params?: {
@@ -498,6 +513,33 @@ export async function organizerMarkSoldOut(eventId: string): Promise<void> {
 
 export async function organizerReopenBooking(eventId: string): Promise<void> {
   await api.post(`/organizer/events/${eventId}/reopen-booking`);
+}
+
+export async function organizerPauseSales(eventId: string): Promise<void> {
+  await api.post(`/organizer/events/${eventId}/pause-sales`);
+}
+
+export async function organizerResumeSales(eventId: string): Promise<void> {
+  await api.post(`/organizer/events/${eventId}/resume-sales`);
+}
+
+export async function listOrganizerTicketTypes(eventId: string): Promise<{ ticketTypes: any[] }> {
+  return api.get(`/organizer/events/${eventId}/ticket-types`);
+}
+
+export async function updateOrganizerTicketType(
+  eventId: string,
+  ticketTypeId: string,
+  data: {
+    name?: string;
+    description?: string;
+    price?: number;
+    capacity?: number;
+    maxPerOrder?: number;
+    active?: boolean;
+  },
+): Promise<{ ticketType: any }> {
+  return api.patch(`/organizer/events/${eventId}/ticket-types/${ticketTypeId}`, data);
 }
 
 // ── Orders ──────────────────────────────────────────────
