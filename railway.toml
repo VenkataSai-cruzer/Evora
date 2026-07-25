@@ -1,17 +1,16 @@
 # Railway configuration for Evora API
-# Node 22 + workspace-aware build
+# Build: uses root Dockerfile (Node 22, multi-stage, no secrets baked in)
+# Migrations: run as releaseCommand before each deploy
 
 [build]
-builder = "nixpacks"
-# Root npm ci installs ALL workspace deps including devDeps needed for tsc.
-# We don't run npm install again inside apps/api — that breaks workspace resolution.
-buildCommand = "npx prisma generate --schema=apps/api/prisma/schema.prisma && npm run build:api"
+# Railway auto-detects the root Dockerfile — no builder override needed
+# buildCommand is empty because CMD in Dockerfile handles startup
 
 [deploy]
-# Migration runs as releaseCommand (pre-deploy, isolated connection)
-# App starts clean with no migration overhead competing for connections
-startCommand = "cd apps/api && node dist/server.js"
+# Run migrations BEFORE the app starts (isolated, before server connections open)
 releaseCommand = "cd apps/api && npx prisma migrate deploy --schema=prisma/schema.prisma"
+# CMD in Dockerfile already runs: node apps/api/dist/server.js
+# startCommand override not needed — leave Railway to use Dockerfile CMD
 healthcheckPath = "/api/v1/health"
 healthcheckTimeout = 60
 restartPolicyType = "on_failure"
