@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const API_DIR = resolve(__dirname, '..');
+const SCHEMA = resolve(API_DIR, 'prisma', 'schema.prisma');
 
 // ── 1. Build the PgBouncer-safe connection URL ────────────────
 const rawUrl = process.env.DATABASE_URL;
@@ -24,7 +25,6 @@ if (!rawUrl) {
 const separator = rawUrl.includes('?') ? '&' : '?';
 const dbUrl = `${rawUrl}${separator}pgbouncer=true`;
 
-process.env.DATABASE_URL = dbUrl;
 console.log('[run-migration] DATABASE_URL set with ?pgbouncer=true');
 
 // ── 2. Kill idle connections to free up pooler slots ──────────
@@ -32,10 +32,10 @@ console.log('[run-migration] DATABASE_URL set with ?pgbouncer=true');
 // from this step is self-contained.
 try {
   execSync(
-    `npx -y prisma db execute --schema="${resolve(API_DIR, 'prisma', 'schema.prisma')}" --stdin <<< "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE state = 'idle' AND pid <> pg_backend_pid() AND usename = current_user AND query NOT LIKE '%pg_terminate_backend%';"`,
+    `echo "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE state = 'idle' AND pid <> pg_backend_pid() AND usename = current_user;" | npx -y prisma db execute --schema="${SCHEMA}" --stdin`,
     {
       cwd: API_DIR,
-      stdio: ['pipe', 'inherit', 'inherit'],
+      stdio: 'inherit',
       timeout: 10_000,
       env: { ...process.env, DATABASE_URL: dbUrl },
     },
@@ -50,11 +50,11 @@ try {
 console.log('[run-migration] Running prisma migrate deploy...');
 try {
   execSync(
-    `npx prisma migrate deploy --schema="${resolve(API_DIR, 'prisma', 'schema.prisma')}"`,
+    `npx prisma migrate deploy --schema="${SCHEMA}"`,
     {
       cwd: API_DIR,
       stdio: 'inherit',
-      timeout: 60_000,
+      timeout: 120_000,
       env: { ...process.env, DATABASE_URL: dbUrl },
     },
   );
