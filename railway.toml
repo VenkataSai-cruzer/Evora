@@ -7,10 +7,9 @@
 # buildCommand is empty because CMD in Dockerfile handles startup
 
 [deploy]
-# Run migrations BEFORE the app starts (isolated, before server connections open)
-releaseCommand = "cd apps/api && npx prisma migrate deploy --schema=prisma/schema.prisma"
-# CMD in Dockerfile already runs: node apps/api/dist/server.js
-# startCommand override not needed — leave Railway to use Dockerfile CMD
+# Migrations use DIRECT_URL (bypasses session pooler, no connection limit)
+# App server uses DATABASE_URL (session pooler is fine for normal queries)
+releaseCommand = "cd apps/api && DATABASE_URL=\"$DIRECT_URL\" npx prisma migrate deploy --schema=prisma/schema.prisma"
 healthcheckPath = "/api/v1/health"
 healthcheckTimeout = 60
 restartPolicyType = "on_failure"
