@@ -1001,53 +1001,103 @@ export class AdminController {
 
   /**
    * GET /admin/drive/test
-   * Tests Google Drive connectivity by listing the root folder
-   * and optionally uploading a test image.
+   * Diagnoses Google Drive configuration and tests connectivity.
+   * Shows exactly which env vars are set/missing.
    */
   async testDriveConnection(request: FastifyRequest, reply: FastifyReply) {
+    void request;
+
     const driveEnabled = process.env.GOOGLE_DRIVE_ENABLED === 'true';
+    const keyJson       = process.env.GOOGLE_SERVICE_ACCOUNT_KEY_JSON;
+    const projectId     = process.env.GOOGLE_PROJECT_ID;
+    const clientEmail   = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+    const privateKey    = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY;
+
+    // ── Config diagnosis ──────────────────────────────────
+    const configCheck = {
+      GOOGLE_DRIVE_ENABLED:               driveEnabled ? '✓ true' : '✗ not set or false',
+      GOOGLE_SERVICE_ACCOUNT_KEY_JSON:    keyJson     ? `✓ set (${keyJson.length} chars)` : '✗ not set',
+      GOOGLE_PROJECT_ID:                  projectId   ? `✓ ${projectId}` : '✗ not set',
+      GOOGLE_SERVICE_ACCOUNT_EMAIL:       clientEmail ? `✓ ${clientEmail}` : '✗ not set',
+      GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: privateKey  ? `✓ set (${privateKey.length} chars, starts with ${privateKey.slice(0, 27)}...)` : '✗ not set',
+    };
+
+    const hasKeyJson  = !!keyJson;
+    const hasIndivual = !!(projectId && clientEmail && privateKey);
+    const hasCreds    = hasKeyJson || hasIndivual;
 
     if (!driveEnabled) {
-      void request;
       return reply.send({
-        enabled: false,
-        message: 'Google Drive is not enabled. Set GOOGLE_DRIVE_ENABLED=true',
-        rootFolderName: 'Evora Payment Proofs',
-        folders: [],
+        ok: false,
+        diagnosis: 'DRIVE_DISABLED',
+        message: 'Set GOOGLE_DRIVE_ENABLED=true on Render to enable Drive uploads.',
+        config: configCheck,
       });
     }
 
+    if (!hasCreds) {
+      return reply.send({
+        ok: false,
+        diagnosis: 'MISSING_CREDENTIALS',
+        message: 'Drive is enabled but credentials are missing. Set GOOGLE_SERVICE_ACCOUNT_KEY_JSON (preferred) OR all three: GOOGLE_PROJECT_ID + GOOGLE_SERVICE_ACCOUNT_EMAIL + GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY.',
+        config: configCheck,
+      });
+    }
+
+    // ── Validate JSON if using key blob ───────────────────
+    if (hasKeyJson && !hasIndivual) {
+      try {
+        const parsed = JSON.parse(keyJson!);
+        if (!parsed.client_email || !parsed.private_key) {
+          return reply.send({
+            ok: false,
+            diagnosis: 'INVALID_KEY_JSON',
+            message: 'GOOGLE_SERVICE_ACCOUNT_KEY_JSON is valid JSON but missing client_email or private_key fields.',
+            config: configCheck,
+          });
+        }
+      } catch {
+        return reply.send({
+          ok: false,
+          diagnosis: 'INVALID_KEY_JSON',
+          message: 'GOOGLE_SERVICE_ACCOUNT_KEY_JSON is not valid JSON. Make sure it is pasted as a single line with no line breaks.',
+          config: configCheck,
+        });
+      }
+    }
+
+    // ── Attempt real Drive connection ──────────────────────
     try {
       const driveService = new GoogleDriveService();
-      const result = await driveService.testConnectivity();
+      const connectivity = await driveService.testConnectivity();
 
-      // Optionally upload a test image to verify the full pipeline
-      let uploadTest;
+      // Try uploading a test file to verify full write access
+      let uploadTest: { ok: boolean; fileId?: string; viewUrl?: string; error?: string };
       try {
         const uploadResult = await driveService.uploadTestFile();
-        uploadTest = {
-          ok: true,
-          fileId: uploadResult.fileId,
-          viewUrl: uploadResult.viewUrl,
-        };
-        // Clean up test file
+        uploadTest = { ok: true, fileId: uploadResult.fileId, viewUrl: uploadResult.viewUrl };
         await driveService.deleteFile(uploadResult.fileId).catch(() => {});
-      } catch {
-        uploadTest = { ok: false };
+      } catch (upErr) {
+        uploadTest = { ok: false, error: upErr instanceof Error ? upErr.message : String(upErr) };
       }
 
       return reply.send({
-        enabled: true,
-        message: 'Google Drive connection successful',
-        connectivity: result,
+        ok: uploadTest.ok,
+        diagnosis: uploadTest.ok ? 'ALL_GOOD' : 'UPLOAD_FAILED',
+        message: uploadTest.ok
+          ? '✅ Google Drive is fully working. Payment proofs will be uploaded.'
+          : '⚠️ Drive connection succeeded but upload test failed. Check service account folder permissions.',
+        config: configCheck,
+        connectivity,
         uploadTest,
       });
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
+      const message = err instanceof Error ? err.message : String(err);
       return reply.status(502).send({
-        enabled: true,
-        error: 'Google Drive connection failed',
-        message,
+        ok: false,
+        diagnosis: 'CONNECTION_FAILED',
+        message: `Drive connection failed: ${message}`,
+        config: configCheck,
       });
     }
   }

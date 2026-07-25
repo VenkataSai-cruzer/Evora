@@ -158,11 +158,15 @@ export class PaymentController {
     let storageProvider = 'GOOGLE_DRIVE';
 
     const driveEnabled = process.env.GOOGLE_DRIVE_ENABLED === 'true';
-    const hasDriveCreds =
-      process.env.GOOGLE_SERVICE_ACCOUNT_KEY_JSON ||
-      (process.env.GOOGLE_PROJECT_ID &&
-        process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL &&
-        process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY);
+    const hasKeyJson = !!process.env.GOOGLE_SERVICE_ACCOUNT_KEY_JSON;
+    const hasIndividual = !!(
+      process.env.GOOGLE_PROJECT_ID &&
+      process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL &&
+      process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
+    );
+    const hasDriveCreds = hasKeyJson || hasIndividual;
+
+    console.log(`[PaymentProof] Drive check — enabled=${driveEnabled} hasCreds=${hasDriveCreds} (keyJson=${hasKeyJson} individual=${hasIndividual})`);
 
     if (driveEnabled && hasDriveCreds) {
       try {
